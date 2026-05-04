@@ -1,0 +1,55 @@
+name: ecocash_sekolah
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  mobile_scanner: ^7.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  intl: ^0.19.0          
+  google_fonts: ^6.2.1
+  cupertino_icons: ^1.0.8
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+  - assets/google.png
+  - assets/bg.png
+  - assets/bg2.png
+  - assets/bg3.png
+  - assets/bg4.png
+  - assets/bg5.png
+  - assets/bg6.png
+  - assets/bg7.png
+  - assets/bg8.png
+  - assets/bg9.png
+  - assets/ijo.png
+  - assets/biru.png
+  - assets/ungu.png
+  - assets/logokids.png
+  - assets/logoideas.png
+  - assets/icons/share.png
+  - assets/icons/recycle.png
+  - assets/icons/mingcute.png
+  - assets/icons/daun.png
+  - assets/icons/dompet.png
+  - assets/icons/lock.png
+  - assets/icons/lokasi.png
+  - assets/icons/love.png
+  - assets/icons/panah.png
+  - assets/icons/panahb.png
+  - assets/icons/plus.png
+  - assets/icons/scan.png
+  - assets/icons/topup.png
+  - assets/icons/star.png
+  - assets/icons/calendar.png
+  - assets/icons/riwayat.png
