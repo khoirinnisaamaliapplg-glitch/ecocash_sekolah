@@ -34,7 +34,7 @@ class RiwayatPage extends StatelessWidget {
           width: double.infinity,
           decoration: const BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/bg4.png'),
+              image: AssetImage('assets/bg1.png'),
               fit: BoxFit.cover,
             ),
           ),

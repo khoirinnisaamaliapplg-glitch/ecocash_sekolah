@@ -164,7 +164,7 @@ class TabunganPage extends StatelessWidget {
       width: double.infinity,
       decoration: const BoxDecoration(
         image: DecorationImage(
-          image: AssetImage('assets/bg9.png'), // Background biru/gambar harimau
+          image: AssetImage('assets/bg3.png'), // Background biru/gambar harimau
           fit: BoxFit.cover,
         ),
       ),

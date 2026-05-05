@@ -1,3 +1,6 @@
+import 'package:ecocash_sekolah/refund/refund.dart';
+import 'package:ecocash_sekolah/setor_sampah/scan.dart';
+import 'package:ecocash_sekolah/transfer/transfer.dart';
 import 'package:flutter/material.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -5,17 +8,20 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Menggunakan warna biru 54D2F4 sebagai aksen utama
-    const Color primaryBlue = Color(0xFF54D2F4);
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
         child: Column(
           children: [
-            _buildHeader(),
-            // Jarak yang pas agar menu di bawah kartu saldo tidak tertutup
-            const SizedBox(height: 170),
+            // Bungkus Header dengan Container yang lebih tinggi agar Hit-Test masuk
+            SizedBox(
+              height:
+                  450, // Sesuaikan tinggi agar Card yang menonjol tetap dalam jangkauan klik
+              child: _buildHeader(context),
+            ),
+            const SizedBox(
+              height: 40,
+            ), // Kurangi SizedBox ini karena height di atas sudah ditambah
             _buildCombinedPaymentMenu(),
             const SizedBox(height: 50),
           ],
@@ -24,11 +30,10 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // Background Header yang tingginya sudah disesuaikan agar tidak terlalu bawah
         Container(
           height: 320,
           width: double.infinity,
@@ -36,23 +41,21 @@ class HomeScreen extends StatelessWidget {
             image: DecorationImage(
               image: AssetImage('assets/bg8.png'),
               fit: BoxFit.cover,
-              alignment:
-                  Alignment.topCenter, // Memastikan maskot tidak tertutup
+              alignment: Alignment.topCenter,
             ),
           ),
         ),
-        // Kartu Saldo (Balance Card)
         Positioned(
-          bottom: -130,
+          bottom: 0, // Ubah ke 0 karena induknya (SizedBox) sudah ditinggikan
           left: 20,
           right: 20,
-          child: _buildBalanceCard(),
+          child: _buildBalanceCard(context),
         ),
       ],
     );
   }
 
-  Widget _buildBalanceCard() {
+  Widget _buildBalanceCard(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
       decoration: BoxDecoration(
@@ -68,7 +71,6 @@ class HomeScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Baris Saldo
           Row(
             children: [
               Image.asset('assets/icons/dompet.png', height: 45, width: 45),
@@ -84,7 +86,6 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 25),
-          // Statistik (Carbon & Point)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -99,14 +100,48 @@ class HomeScreen extends StatelessWidget {
           const SizedBox(height: 20),
           const Divider(height: 1, color: Color(0xFFF0F0F0)),
           const SizedBox(height: 20),
-          // Tombol Aksi Layanan
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildActionItem('assets/icons/scan.png', "Scan Barcode"),
-              _buildActionItem('assets/icons/topup.png', "Top Up"),
-              _buildActionItem('assets/icons/panah.png', "Transfer"),
-              _buildActionItem('assets/icons/lock.png', "Activity"),
+              _buildActionItem(
+                context,
+                'assets/icons/scan.png',
+                "Scan Barcode",
+                onTap: () {
+                  print("Tombol Berhasil Diklik!"); // Cek di console
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ScanPage()),
+                  );
+                },
+              ),
+              _buildActionItem(context, 'assets/icons/topup.png', "Top Up"),
+              _buildActionItem(
+                context,
+                'assets/icons/panah.png',
+                "Transfer",
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const TransferPage(),
+                    ),
+                  );
+                },
+              ),
+              _buildActionItem(
+                context,
+                'assets/icons/lock.png',
+                "History",
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const RefundsScreen(),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ],
@@ -114,6 +149,37 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildActionItem(
+    BuildContext context,
+    String path,
+    String label, {
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque, // Sangat penting untuk area klik
+      child: SizedBox(
+        width: 75,
+        child: Column(
+          children: [
+            Image.asset(path, height: 35, width: 35),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF5A6B7D),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Widget _buildCombinedPaymentMenu, _buildStatItem, dll tetap sama...
   Widget _buildCombinedPaymentMenu() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -129,13 +195,10 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 15),
-          // Container Menu Utama (Warna Merah Muda ke Merah)
           Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFFFF7066), Color(0xFFFF8A84)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(30),
             ),
@@ -148,7 +211,6 @@ class HomeScreen extends StatelessWidget {
                       const Icon(
                         Icons.confirmation_number,
                         color: Colors.white,
-                        size: 24,
                       ),
                       const SizedBox(width: 10),
                       const Text(
@@ -156,7 +218,6 @@ class HomeScreen extends StatelessWidget {
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
-                          fontSize: 16,
                         ),
                       ),
                       const Spacer(),
@@ -164,13 +225,7 @@ class HomeScreen extends StatelessWidget {
                         onPressed: () {},
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white.withOpacity(0.3),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
                           shape: const StadiumBorder(),
-                          side: const BorderSide(
-                            color: Colors.white,
-                            width: 0.5,
-                          ),
                         ),
                         child: const Text(
                           "Pakai",
@@ -180,7 +235,6 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Daftar Menu dalam Container Putih
                 Container(
                   decoration: const BoxDecoration(
                     color: Colors.white,
@@ -238,50 +292,22 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildActionItem(String path, String label) {
-    return SizedBox(
-      width: 70,
-      child: Column(
-        children: [
-          Image.asset(path, height: 35, width: 35),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF5A6B7D),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildMenuTile(String path, String title) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
       leading: Image.asset(path, height: 30, width: 30),
       title: Text(
         title,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF2D3E50),
-        ),
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
       ),
-      trailing: const Icon(
-        Icons.chevron_right,
-        color: Color(0xFF2D3E50),
-        size: 18,
-      ),
+      trailing: const Icon(Icons.chevron_right, size: 18),
       onTap: () {},
     );
   }
 
-  Widget _buildDivider() => const Padding(
-    padding: EdgeInsets.symmetric(horizontal: 20),
-    child: Divider(height: 1, color: Color(0xFFF5F5F5)),
+  Widget _buildDivider() => const Divider(
+    height: 1,
+    color: Color(0xFFF5F5F5),
+    indent: 20,
+    endIndent: 20,
   );
 }

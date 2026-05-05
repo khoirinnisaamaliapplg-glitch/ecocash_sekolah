@@ -64,7 +64,7 @@ class TransferPage extends StatelessWidget {
           width: double.infinity,
           decoration: const BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/bg3.png'),
+              image: AssetImage('assets/bg2.png'),
               fit: BoxFit.cover,
             ),
           ),

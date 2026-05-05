@@ -23,15 +23,14 @@ flutter:
   uses-material-design: true
   assets:
   - assets/google.png
-  - assets/bg.png
+  - assets/bg1.png
   - assets/bg2.png
   - assets/bg3.png
   - assets/bg4.png
-  - assets/bg5.png
   - assets/bg6.png
   - assets/bg7.png
   - assets/bg8.png
-  - assets/bg9.png
+  - assets/bgp.png
   - assets/ijo.png
   - assets/biru.png
   - assets/ungu.png

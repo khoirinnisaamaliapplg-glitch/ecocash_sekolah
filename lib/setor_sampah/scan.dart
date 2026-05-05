@@ -15,7 +15,6 @@ class _ScanPageState extends State<ScanPage> {
     torchEnabled: false,
   );
 
-  String? _scanResult;
   bool _isScanning = true;
 
   @override
@@ -51,7 +50,7 @@ class _ScanPageState extends State<ScanPage> {
           width: double.infinity,
           decoration: const BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/bg5.png'),
+              image: AssetImage('assets/bgp.png'),
               fit: BoxFit.cover,
             ),
           ),
@@ -149,7 +148,6 @@ class _ScanPageState extends State<ScanPage> {
                             for (final barcode in barcodes) {
                               if (barcode.rawValue != null) {
                                 setState(() {
-                                  _scanResult = barcode.rawValue;
                                   _isScanning = false;
                                 });
                                 _showResultDialog(barcode.rawValue!);
