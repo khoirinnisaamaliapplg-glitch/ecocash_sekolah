@@ -1,6 +1,9 @@
 import 'package:ecocash_sekolah/home.dart';
 import 'package:flutter/material.dart';
-// Pastikan ini mengarah ke file yang benar, bisa
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:ecocash_sekolah/ipconfig.dart';
+import 'package:jwt_decoder/jwt_decoder.dart'; // Import untuk membaca isi token
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -10,8 +13,103 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
   bool _rememberMe = true;
   bool _obscureText = true;
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  // --- LOGIKA LOGIN (Disamakan dengan versi Web React) ---
+  Future<void> _handleLogin() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      _showSnackBar("Username dan Password wajib diisi", Colors.orange);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse(ApiConfig.login),
+        headers: ApiConfig.headers,
+        body: jsonEncode({
+          'identifier': _emailController.text.trim(),
+          'password': _passwordController.text,
+        }),
+      );
+
+      final responseData = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        // 1. Ambil token dari response
+        String token = responseData['data']['token'];
+
+        // 2. SIMPAN TOKEN KE APICONFIG (BARIS WAJIB!)
+        // Ini supaya halaman Scan & Setor bisa pakai token ini untuk Authorization
+        ApiConfig.userToken = token;
+        debugPrint("Token berhasil disimpan di memori.");
+
+        // 3. Decode token untuk cek role
+        Map<String, dynamic> decodedToken = JwtDecoder.decode(token);
+        String role = decodedToken['role'] ?? "";
+        String userRole = role.toUpperCase().trim();
+
+        // 4. FILTER ROLE: Hanya REGULAR_USER yang bisa masuk ke Mobile
+        if (userRole == "REGULAR_USER") {
+          if (!mounted) return;
+          _showSnackBar(
+            "Selamat Datang, ${_emailController.text}!",
+            Colors.green,
+          );
+
+          // Pindah ke Dashboard
+          Future.delayed(const Duration(milliseconds: 1000), () {
+            if (!mounted) return;
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const HomeScreen()),
+            );
+          });
+        } else {
+          // Jika bukan user biasa, hapus token lagi biar aman
+          ApiConfig.userToken = null;
+          if (!mounted) return;
+          _showSnackBar(
+            "Role '$userRole' tidak memiliki akses mobile.",
+            Colors.red,
+          );
+        }
+      } else {
+        final errorMsg = responseData['message'] ?? 'Login Gagal';
+        if (!mounted) return;
+        _showSnackBar(errorMsg, Colors.red);
+      }
+    } catch (e) {
+      debugPrint("Error: $e");
+      if (!mounted) return;
+      _showSnackBar("Terjadi kesalahan pada server", Colors.red);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,29 +122,18 @@ class _LoginPageState extends State<LoginPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 50),
-
-              // --- SECTION LOGO ---
               Center(
-                child: Column(
-                  children: [
-                    Image.asset(
-                      'assets/logokids.png',
-                      height: 180,
-                      width: 180,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(
-                          Icons.eco_rounded,
-                          size: 100,
-                          color: Colors.blue,
-                        );
-                      },
-                    ),
-                  ],
+                child: Image.asset(
+                  'assets/logokids.png',
+                  height: 150,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.eco_rounded,
+                    size: 100,
+                    color: Colors.green,
+                  ),
                 ),
               ),
-
-              const SizedBox(height: 50),
+              const SizedBox(height: 40),
               const Text(
                 'Sign In',
                 style: TextStyle(
@@ -56,8 +143,6 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
               const SizedBox(height: 24),
-
-              // --- FIELD EMAIL ---
               const Text(
                 'Email',
                 style: TextStyle(
@@ -67,21 +152,16 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 8),
               TextField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
-                  hintText: 'rafihafizhnianggia@gmail.com',
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.green),
-                  ),
+                  hintText: 'nama@email.com',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // --- FIELD PASSWORD ---
               const Text(
                 'Password',
                 style: TextStyle(
@@ -91,6 +171,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 8),
               TextField(
+                controller: _passwordController,
                 obscureText: _obscureText,
                 decoration: InputDecoration(
                   hintText: '************',
@@ -108,10 +189,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 12),
-
-              // --- REMEMBER ME & FORGOT PASSWORD ---
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -119,57 +197,43 @@ class _LoginPageState extends State<LoginPage> {
                     children: [
                       Checkbox(
                         value: _rememberMe,
-                        activeColor: Colors.blue,
-                        onChanged: (value) =>
-                            setState(() => _rememberMe = value!),
+                        onChanged: (val) => setState(() => _rememberMe = val!),
                       ),
                       const Text('Remember me'),
                     ],
                   ),
                   TextButton(
                     onPressed: () {},
-                    child: const Text(
-                      'Forgot password?',
-                      style: TextStyle(color: Colors.lightBlue),
-                    ),
+                    child: const Text('Forgot password?'),
                   ),
                 ],
               ),
-
               const SizedBox(height: 24),
-
-              // --- BUTTON LOGIN ---
               SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const HomeScreen(),
-                      ),
-                    );
-                  },
+                  onPressed: _isLoading
+                      ? null
+                      : _handleLogin, // Panggil fungsi di sini
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2E7D32),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
-                    'Login',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                          'Login',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
-
               const SizedBox(height: 30),
-
-              // --- DIVIDER ---
               const Row(
                 children: [
                   Expanded(child: Divider()),
@@ -183,57 +247,37 @@ class _LoginPageState extends State<LoginPage> {
                   Expanded(child: Divider()),
                 ],
               ),
-
               const SizedBox(height: 24),
-
-              // --- SOCIAL BUTTONS ---
               Row(
                 children: [
                   Expanded(
                     child: _socialButton(
-                      label: 'Facebook',
-                      iconWidget: const Icon(
-                        Icons.facebook,
-                        color: Colors.blue,
-                        size: 24,
-                      ),
+                      'Facebook',
+                      Icons.facebook,
+                      Colors.blue,
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: _socialButton(
-                      label: 'Google',
-                      iconWidget: Image.asset(
-                        'assets/google.png', // Ganti dengan nama file logo google di folder assets kamu
-                        height: 24,
-                        width: 24,
-                        fit: BoxFit.contain,
-                      ),
+                      'Google',
+                      Icons.g_mobiledata,
+                      Colors.red,
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: 40),
-
-              // --- FOOTER ---
               Center(
                 child: Wrap(
                   children: [
                     const Text("Don't have an account? "),
                     GestureDetector(
-                      // onTap: () {
-                      //   Navigator.push(
-                      //     context,
-                      //     MaterialPageRoute(
-                      //       builder: (context) => const R(),
-                      //     ),
-                      //   );
-                      // },
+                      onTap: () {},
                       child: const Text(
                         'Sign Up',
                         style: TextStyle(
-                          color: Colors.lightBlue,
+                          color: Colors.blue,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -249,29 +293,14 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // Widget Helper untuk Tombol Social
-  Widget _socialButton({required String label, required Widget iconWidget}) {
-    return OutlinedButton(
+  Widget _socialButton(String label, IconData icon, Color color) {
+    return OutlinedButton.icon(
       onPressed: () {},
+      icon: Icon(icon, color: color),
+      label: Text(label, style: const TextStyle(color: Color(0xFF344054))),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        side: const BorderSide(color: Color(0xFFEAECF0)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        backgroundColor: const Color(0xFFF9FAFB),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          iconWidget,
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF344054),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
       ),
     );
   }

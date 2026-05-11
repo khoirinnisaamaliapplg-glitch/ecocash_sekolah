@@ -1,4 +1,5 @@
 import 'package:ecocash_sekolah/refund/refund.dart';
+import 'package:ecocash_sekolah/saldo/saldo.dart';
 import 'package:ecocash_sekolah/setor_sampah/scan.dart';
 import 'package:ecocash_sekolah/transfer/transfer.dart';
 import 'package:flutter/material.dart';
@@ -115,7 +116,13 @@ class HomeScreen extends StatelessWidget {
                   );
                 },
               ),
-              _buildActionItem(context, 'assets/icons/topup.png', "Top Up"),
+              _buildActionItem(context, 'assets/icons/topup.png', "Top Up",
+                  onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const IsiSaldoPage()),
+                );
+              }),
               _buildActionItem(
                 context,
                 'assets/icons/panah.png',
