@@ -1,37 +1,65 @@
+import 'dart:convert';
 import 'package:ecocash_sekolah/refund/refund.dart';
 import 'package:ecocash_sekolah/saldo/saldo.dart';
 import 'package:ecocash_sekolah/setor_sampah/scan.dart';
 import 'package:ecocash_sekolah/transfer/transfer.dart';
+import 'package:ecocash_sekolah/ecomer/ecomer.dart';
+import 'package:ecocash_sekolah/maps/maps.dart';
+import 'package:ecocash_sekolah/bantuan/bantuan.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:ecocash_sekolah/ipconfig.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+
+  Future<Map<String, dynamic>> _fetchUserData() async {
+    final response = await http.get(
+      Uri.parse(ApiConfig.getMyWallet),
+      headers: {
+        'Authorization': 'Bearer ${ApiConfig.userToken}',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['data'];
+    } else {
+      throw Exception('Gagal memuat profil');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Bungkus Header dengan Container yang lebih tinggi agar Hit-Test masuk
-            SizedBox(
-              height:
-                  450, // Sesuaikan tinggi agar Card yang menonjol tetap dalam jangkauan klik
-              child: _buildHeader(context),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _fetchUserData(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text("Error: ${snapshot.error}"));
+          }
+
+          final data = snapshot.data!;
+
+          return SingleChildScrollView(
+            child: Column(
+              children: [
+                SizedBox(height: 450, child: _buildHeader(context, data)),
+                const SizedBox(height: 40),
+                _buildCombinedPaymentMenu(context),
+                const SizedBox(height: 50),
+              ],
             ),
-            const SizedBox(
-              height: 40,
-            ), // Kurangi SizedBox ini karena height di atas sudah ditambah
-            _buildCombinedPaymentMenu(),
-            const SizedBox(height: 50),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, Map<String, dynamic> data) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -47,16 +75,16 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         Positioned(
-          bottom: 0, // Ubah ke 0 karena induknya (SizedBox) sudah ditinggikan
+          bottom: 0,
           left: 20,
           right: 20,
-          child: _buildBalanceCard(context),
+          child: _buildBalanceCard(context, data),
         ),
       ],
     );
   }
 
-  Widget _buildBalanceCard(BuildContext context) {
+  Widget _buildBalanceCard(BuildContext context, Map<String, dynamic> data) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
       decoration: BoxDecoration(
@@ -76,9 +104,9 @@ class HomeScreen extends StatelessWidget {
             children: [
               Image.asset('assets/icons/dompet.png', height: 45, width: 45),
               const SizedBox(width: 15),
-              const Text(
-                "Rp150.000",
-                style: TextStyle(
+              Text(
+                "Rp${data['balance'] ?? '0'}",
+                style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF2D3E50),
@@ -92,10 +120,14 @@ class HomeScreen extends StatelessWidget {
             children: [
               _buildStatItem(
                 "Carbon Saved:",
-                "0,5 Kg CO2",
+                "${data['carbon'] ?? '0'} Kg CO2",
                 'assets/icons/daun.png',
               ),
-              _buildStatItem("Total Point:", "500", 'assets/icons/star.png'),
+              _buildStatItem(
+                "Total Point:",
+                "${data['points'] ?? '0'}",
+                'assets/icons/star.png',
+              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -109,20 +141,25 @@ class HomeScreen extends StatelessWidget {
                 'assets/icons/scan.png',
                 "Scan Barcode",
                 onTap: () {
-                  print("Tombol Berhasil Diklik!"); // Cek di console
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const ScanPage()),
                   );
                 },
               ),
-              _buildActionItem(context, 'assets/icons/topup.png', "Top Up",
-                  onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const IsiSaldoPage()),
-                );
-              }),
+              _buildActionItem(
+                context,
+                'assets/icons/topup.png',
+                "Top Up",
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const IsiSaldoPage(),
+                    ),
+                  );
+                },
+              ),
               _buildActionItem(
                 context,
                 'assets/icons/panah.png',
@@ -164,7 +201,7 @@ class HomeScreen extends StatelessWidget {
   }) {
     return GestureDetector(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque, // Sangat penting untuk area klik
+      behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 75,
         child: Column(
@@ -186,8 +223,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // Widget _buildCombinedPaymentMenu, _buildStatItem, dll tetap sama...
-  Widget _buildCombinedPaymentMenu() {
+  Widget _buildCombinedPaymentMenu(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
@@ -252,14 +288,35 @@ class HomeScreen extends StatelessWidget {
                       _buildMenuTile(
                         'assets/icons/lokasi.png',
                         "Find nearest return point",
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const MapsPage(),
+                          ),
+                        ),
                       ),
                       _buildDivider(),
                       _buildMenuTile(
                         'assets/icons/panahb.png',
                         "Exchange balance for goods",
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const EcomerPage(),
+                          ),
+                        ),
                       ),
                       _buildDivider(),
-                      _buildMenuTile('assets/icons/love.png', "Charities"),
+                      _buildMenuTile(
+                        'assets/icons/love.png',
+                        "Charities",
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const BantuanPage(),
+                          ),
+                        ),
+                      ),
                       _buildDivider(),
                       _buildMenuTile('assets/icons/plus.png', "Other"),
                     ],
@@ -299,15 +356,18 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuTile(String path, String title) {
-    return ListTile(
-      leading: Image.asset(path, height: 30, width: 30),
-      title: Text(
-        title,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+  Widget _buildMenuTile(String path, String title, {VoidCallback? onTap}) {
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        leading: Image.asset(path, height: 30, width: 30),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        trailing: const Icon(Icons.chevron_right, size: 18),
+        onTap: onTap,
       ),
-      trailing: const Icon(Icons.chevron_right, size: 18),
-      onTap: () {},
     );
   }
 

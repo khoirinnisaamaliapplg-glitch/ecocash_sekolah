@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:ecocash_sekolah/ipconfig.dart';
 
 class RefundsScreen extends StatefulWidget {
   const RefundsScreen({super.key});
@@ -8,36 +11,31 @@ class RefundsScreen extends StatefulWidget {
 }
 
 class _RefundsScreenState extends State<RefundsScreen> {
-  final List<Map<String, dynamic>> _monthlyRecap = [
-    {
-      'month': 'May',
-      'location': 'Henley Community C...',
-      'amount': 'Rp 100.000',
-      'status': 'Paid Out',
-      'isExpanded': true,
-    },
-    {
-      'month': 'April',
-      'location': 'Henley Community C...',
-      'amount': 'Rp 75.000',
-      'status': 'Paid Out',
-      'isExpanded': false,
-    },
-    {
-      'month': 'March',
-      'location': 'Henley Community C...',
-      'amount': 'Rp 120.000',
-      'status': 'Paid Out',
-      'isExpanded': false,
-    },
-    {
-      'month': 'February',
-      'location': 'Henley Community C...',
-      'amount': 'Rp 90.000',
-      'status': 'Paid Out',
-      'isExpanded': false,
-    },
-  ];
+  late Future<List<dynamic>> _refundsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _refundsFuture = _fetchRefunds();
+  }
+
+  Future<List<dynamic>> _fetchRefunds() async {
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.getMySessionHistory),
+        headers: ApiConfig.headers,
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        return responseData['data'] ?? [];
+      } else {
+        throw Exception('Gagal memuat data');
+      }
+    } catch (e) {
+      throw Exception('Terjadi kesalahan: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,9 +45,28 @@ class _RefundsScreenState extends State<RefundsScreen> {
         child: Column(
           children: [
             _buildHeader(context),
-            // Ditambah sedikit karena card sekarang lebih besar
-            const SizedBox(height: 140), 
-            _buildRecapList(),
+            const SizedBox(height: 140),
+            FutureBuilder<List<dynamic>>(
+              future: _refundsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.all(50),
+                    child: CircularProgressIndicator(),
+                  );
+                } else if (snapshot.hasError) {
+                  return Center(child: Text("Error: ${snapshot.error}"));
+                } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Text("Tidak ada riwayat."),
+                    ),
+                  );
+                }
+                return _buildRecapList(snapshot.data!);
+              },
+            ),
             const SizedBox(height: 50),
           ],
         ),
@@ -57,7 +74,7 @@ class _RefundsScreenState extends State<RefundsScreen> {
     );
   }
 
-  Widget _buildRecapList() {
+  Widget _buildRecapList(List<dynamic> data) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
@@ -74,93 +91,80 @@ class _RefundsScreenState extends State<RefundsScreen> {
         ),
         child: Column(
           children: [
-            Container(
-              padding: const EdgeInsets.all(18), // Padding header list lebih besar
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFD966),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
-                ),
-              ),
-              child: Row(
-                children: const [
-                  Icon(Icons.calendar_month, color: Colors.white, size: 24),
-                  SizedBox(width: 12),
-                  Text(
-                    'Recap Monthly',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildListHeader(),
             ListView.separated(
               padding: EdgeInsets.zero,
               physics: const NeverScrollableScrollPhysics(),
               shrinkWrap: true,
-              itemCount: _monthlyRecap.length,
+              itemCount: data.length,
               separatorBuilder: (context, index) => const Divider(height: 1),
               itemBuilder: (context, index) {
-                final item = _monthlyRecap[index];
-                return Theme(
-                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
-                    initiallyExpanded: item['isExpanded'],
-                    onExpansionChanged: (val) => setState(() => item['isExpanded'] = val),
-                    leading: Image.asset(
-                      'assets/icons/recycle.png', // Tetap sama
-                      width: 35,
-                      height: 35,
-                    ),
-                    title: Text(
-                      item['month'],
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                    ),
-                    subtitle: Text(
-                      'Recycled at ${item['location']}',
-                      style: const TextStyle(fontSize: 13, color: Colors.grey),
-                    ),
-                    trailing: Icon(
-                      item['isExpanded'] ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                      size: 28,
-                    ),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(72, 0, 20, 25),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              item['amount'],
-                              style: const TextStyle(
-                                color: Color(0xFF107569),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 22,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: const Color(0xFF107569)),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                item['status'],
+                final item = data[index];
+                return Material(
+                  color: Colors.transparent,
+                  child: Theme(
+                    data: Theme.of(
+                      context,
+                    ).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      leading: Image.asset(
+                        'assets/icons/recycle.png',
+                        width: 35,
+                        height: 35,
+                      ),
+                      title: Text(
+                        item['month'] ?? 'N/A',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Recycled at ${item['location'] ?? 'N/A'}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(72, 0, 20, 25),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                item['amount'] ?? 'Rp 0',
                                 style: const TextStyle(
                                   color: Color(0xFF107569),
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                                  fontSize: 22,
                                 ),
                               ),
-                            ),
-                          ],
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: const Color(0xFF107569),
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  item['status'] ?? 'Paid Out',
+                                  style: const TextStyle(
+                                    color: Color(0xFF107569),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },
@@ -171,12 +175,39 @@ class _RefundsScreenState extends State<RefundsScreen> {
     );
   }
 
+  Widget _buildListHeader() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFD966),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Row(
+        children: const [
+          Icon(Icons.calendar_month, color: Colors.white, size: 24),
+          SizedBox(width: 12),
+          Text(
+            'Recap Monthly',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildHeader(BuildContext context) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
-          height: 300, // Header sedikit lebih tinggi
+          height: 300,
           width: double.infinity,
           decoration: const BoxDecoration(
             image: DecorationImage(
@@ -188,7 +219,6 @@ class _RefundsScreenState extends State<RefundsScreen> {
           child: GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
@@ -196,7 +226,11 @@ class _RefundsScreenState extends State<RefundsScreen> {
                     color: Colors.white.withOpacity(0.3),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.arrow_back, color: Colors.white, size: 22),
+                  child: const Icon(
+                    Icons.arrow_back,
+                    color: Colors.white,
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Text(
@@ -212,7 +246,7 @@ class _RefundsScreenState extends State<RefundsScreen> {
           ),
         ),
         Positioned(
-          bottom: -110, // Disesuaikan karena card lebih besar
+          bottom: -110,
           left: 15,
           right: 15,
           child: _buildBalanceCard(),
@@ -226,33 +260,41 @@ class _RefundsScreenState extends State<RefundsScreen> {
       elevation: 10,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Padding(
-        padding: const EdgeInsets.all(25), // Padding diperbesar agar card lebih besar
+        padding: const EdgeInsets.all(25),
         child: Column(
           children: [
             Row(
               children: [
-                Image.asset(
-                  'assets/icons/mingcute.png', // Tetap sama
-                  width: 45,
-                  height: 45,
-                ),
+                Image.asset('assets/icons/mingcute.png', width: 45, height: 45),
                 const SizedBox(width: 12),
                 const Text(
                   'Refunds',
                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
-                Image.asset('assets/icons/share.png', width: 45, height: 45), // Tetap sama
+                Image.asset('assets/icons/share.png', width: 45, height: 45),
               ],
             ),
             const SizedBox(height: 25),
             Row(
               children: [
-                _buildInfoBox('Available balance', 'Rp. 0', const Color(0xFFE6F9E6)),
+                _buildInfoBox(
+                  'Available balance',
+                  'Rp. 0',
+                  const Color(0xFFE6F9E6),
+                ),
                 const SizedBox(width: 10),
-                _buildInfoBox('Total paid out', 'Rp. 0', const Color(0xFFE6F2FA)),
+                _buildInfoBox(
+                  'Total paid out',
+                  'Rp. 0',
+                  const Color(0xFFE6F2FA),
+                ),
                 const SizedBox(width: 10),
-                _buildInfoBox('Total earnings', 'Rp. 0', const Color(0xFFFFF9E6)),
+                _buildInfoBox(
+                  'Total earnings',
+                  'Rp. 0',
+                  const Color(0xFFFFF9E6),
+                ),
               ],
             ),
           ],
@@ -264,7 +306,7 @@ class _RefundsScreenState extends State<RefundsScreen> {
   Widget _buildInfoBox(String title, String value, Color color) {
     return Expanded(
       child: Container(
-        height: 70, // Tinggi box info diperbesar
+        height: 70,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
           color: color,
@@ -278,7 +320,11 @@ class _RefundsScreenState extends State<RefundsScreen> {
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.black54,
+                fontWeight: FontWeight.w500,
+              ),
             ),
             const SizedBox(height: 6),
             Text(

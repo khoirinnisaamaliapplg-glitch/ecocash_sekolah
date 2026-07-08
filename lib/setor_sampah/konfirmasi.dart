@@ -197,13 +197,6 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
           const SizedBox(height: 25),
           _buildDetailBox(),
           const SizedBox(height: 20),
-          Image.asset(
-            'assets/bgscan.png',
-            height: 160,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) =>
-                const Icon(Icons.image, size: 50, color: Colors.grey),
-          ),
         ],
       ),
     );

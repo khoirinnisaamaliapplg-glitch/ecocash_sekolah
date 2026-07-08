@@ -1,6 +1,7 @@
 import 'package:ecocash_sekolah/home.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:ecocash_sekolah/Auth/registrasi.dart';
 import 'dart:convert';
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:jwt_decoder/jwt_decoder.dart'; // Import untuk membaca isi token
@@ -15,6 +16,7 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
 
   bool _rememberMe = true;
   bool _obscureText = true;
@@ -24,6 +26,7 @@ class _LoginPageState extends State<LoginPage> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _usernameController.dispose();
     super.dispose();
   }
 
@@ -144,7 +147,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 24),
               const Text(
-                'Email',
+                'Username or Email',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF344054),
@@ -153,9 +156,9 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 8),
               TextField(
                 controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
+                keyboardType: TextInputType.text,
                 decoration: InputDecoration(
-                  hintText: 'nama@email.com',
+                  hintText: 'username',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -273,7 +276,14 @@ class _LoginPageState extends State<LoginPage> {
                   children: [
                     const Text("Don't have an account? "),
                     GestureDetector(
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const RegisterPage(),
+                          ),
+                        );
+                      },
                       child: const Text(
                         'Sign Up',
                         style: TextStyle(
