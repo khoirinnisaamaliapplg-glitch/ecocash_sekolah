@@ -65,7 +65,7 @@ class _SplashLandingPageState extends State<SplashLandingPage> {
                     // Ganti dengan path file logo Anda.
                     // Contoh: 'assets/images/logo_ecocash_kids.png'
                     // Pastikan file sudah terdaftar di pubspec.yaml
-                    'assets/logokids.png',
+                    'assets/logokids.jpeg',
                     fit: BoxFit.contain, // Memastikan logo muat tanpa terpotong
                     // Anda bisa mengatur height jika perlu batasan spesifik
                     // height: 300,
@@ -92,7 +92,7 @@ class _SplashLandingPageState extends State<SplashLandingPage> {
 
                   // Teks Hak Cipta
                   const Text(
-                    "Copyright © 2025 Ecocash",
+                    "Copyright © 2026 EcoCahs Indoneisia",
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12, color: Color(0xFF7F8C8D)),
                   ),

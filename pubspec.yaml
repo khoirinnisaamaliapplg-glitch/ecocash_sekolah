@@ -25,6 +25,7 @@ flutter:
   uses-material-design: true
   assets:
   - assets/google.png
+  - assets/facebook.png
   - assets/bg1.png
   - assets/bg2.png
   - assets/bg3.png
@@ -36,7 +37,7 @@ flutter:
   - assets/ijo.png
   - assets/biru.png
   - assets/ungu.png
-  - assets/logokids.png
+  - assets/logokids.jpeg
   - assets/logoideas.png
   - assets/icons/share.png
   - assets/icons/recycle.png

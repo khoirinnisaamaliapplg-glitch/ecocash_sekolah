@@ -127,7 +127,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 50),
               Center(
                 child: Image.asset(
-                  'assets/logokids.png',
+                  'assets/logokids.jpeg', // Ganti dengan path file logo Anda.
                   height: 150,
                   errorBuilder: (context, error, stackTrace) => const Icon(
                     Icons.eco_rounded,
@@ -256,7 +256,11 @@ class _LoginPageState extends State<LoginPage> {
                   Expanded(
                     child: _socialButton(
                       'Facebook',
-                      Icons.facebook,
+                      Image.asset(
+                        'assets/facebook.png', // Sesuaikan path gambar Anda
+                        height: 24.0,
+                        width: 24.0,
+                      ),
                       Colors.blue,
                     ),
                   ),
@@ -264,7 +268,11 @@ class _LoginPageState extends State<LoginPage> {
                   Expanded(
                     child: _socialButton(
                       'Google',
-                      Icons.g_mobiledata,
+                      Image.asset(
+                        'assets/google.png', // Sesuaikan path gambar Anda
+                        height: 24.0,
+                        width: 24.0,
+                      ),
                       Colors.red,
                     ),
                   ),
@@ -303,10 +311,11 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _socialButton(String label, IconData icon, Color color) {
+  Widget _socialButton(String label, Widget iconWidget, Color color) {
     return OutlinedButton.icon(
       onPressed: () {},
-      icon: Icon(icon, color: color),
+      // Langsung gunakan widget tanpa dibungkus Icon() lagi
+      icon: iconWidget,
       label: Text(label, style: const TextStyle(color: Color(0xFF344054))),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 12),

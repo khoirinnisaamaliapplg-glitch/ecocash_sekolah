@@ -68,7 +68,7 @@ class _ProfilePageState extends State<ProfilePage> {
       decoration: const BoxDecoration(
         color: Color(0xFFE53935),
         image: DecorationImage(
-          image: AssetImage('assets/bg.png'),
+          image: AssetImage('assets/bgp.png'),
           fit: BoxFit.cover,
         ),
       ),
