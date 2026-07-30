@@ -1,14 +1,17 @@
 import 'dart:convert';
+
+import 'package:ecocash_sekolah/bantuan/bantuan.dart';
+import 'package:ecocash_sekolah/ecomer/ecomer.dart';
+import 'package:ecocash_sekolah/ipconfig.dart';
+import 'package:ecocash_sekolah/maps/maps.dart';
+import 'package:ecocash_sekolah/profile/profile.dart';
 import 'package:ecocash_sekolah/refund/refund.dart';
 import 'package:ecocash_sekolah/saldo/saldo.dart';
 import 'package:ecocash_sekolah/setor_sampah/scan.dart';
 import 'package:ecocash_sekolah/transfer/transfer.dart';
-import 'package:ecocash_sekolah/ecomer/ecomer.dart';
-import 'package:ecocash_sekolah/maps/maps.dart';
-import 'package:ecocash_sekolah/bantuan/bantuan.dart';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:ecocash_sekolah/ipconfig.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -23,38 +26,100 @@ class HomeScreen extends StatelessWidget {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body)['data'];
-    } else {
-      throw Exception('Gagal memuat profil');
+      final Map<String, dynamic> responseData = jsonDecode(response.body);
+
+      final dynamic data = responseData['data'];
+
+      if (data is Map<String, dynamic>) {
+        return data;
+      }
+
+      throw Exception('Format data profil tidak valid');
     }
+
+    throw Exception('Gagal memuat profil. Status: ${response.statusCode}');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _fetchUserData(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
-          }
+      body: SafeArea(
+        top: false,
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: _fetchUserData(),
+          builder:
+              (
+                BuildContext context,
+                AsyncSnapshot<Map<String, dynamic>> snapshot,
+              ) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          final data = snapshot.data!;
+                if (snapshot.hasError) {
+                  return _buildErrorView(context, snapshot.error.toString());
+                }
 
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                SizedBox(height: 450, child: _buildHeader(context, data)),
-                const SizedBox(height: 40),
-                _buildCombinedPaymentMenu(context),
-                const SizedBox(height: 50),
-              ],
+                if (!snapshot.hasData) {
+                  return _buildErrorView(
+                    context,
+                    'Data pengguna tidak tersedia',
+                  );
+                }
+
+                final Map<String, dynamic> data = snapshot.data!;
+
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    await _fetchUserData();
+                  },
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: 450,
+                          child: _buildHeader(context, data),
+                        ),
+                        const SizedBox(height: 40),
+                        _buildCombinedPaymentMenu(context),
+                        const SizedBox(height: 50),
+                      ],
+                    ),
+                  ),
+                );
+              },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorView(BuildContext context, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 52, color: Colors.redAccent),
+            const SizedBox(height: 12),
+            const Text(
+              'Terjadi Kesalahan',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2D3E50),
+              ),
             ),
-          );
-        },
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -86,6 +151,7 @@ class HomeScreen extends StatelessWidget {
 
   Widget _buildBalanceCard(BuildContext context, Map<String, dynamic> data) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -99,92 +165,124 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Image.asset('assets/icons/dompet.png', height: 45, width: 45),
+              Image.asset(
+                'assets/icons/dompet.png',
+                height: 45,
+                width: 45,
+                fit: BoxFit.contain,
+              ),
               const SizedBox(width: 15),
-              Text(
-                "Rp${data['balance'] ?? '0'}",
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF2D3E50),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _formatBalance(data['balance']),
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF2D3E50),
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 25),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildStatItem(
-                "Carbon Saved:",
-                "${data['carbon'] ?? '0'} Kg CO2",
-                'assets/icons/daun.png',
+              Expanded(
+                child: _buildStatItem(
+                  label: 'Carbon Saved:',
+                  value: '${data['carbon'] ?? '0'} Kg CO₂',
+                  path: 'assets/icons/daun.png',
+                ),
               ),
-              _buildStatItem(
-                "Total Point:",
-                "${data['points'] ?? '0'}",
-                'assets/icons/star.png',
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatItem(
+                  label: 'Total Point:',
+                  value: '${data['points'] ?? '0'}',
+                  path: 'assets/icons/star.png',
+                ),
               ),
             ],
           ),
           const SizedBox(height: 20),
-          const Divider(height: 1, color: Color(0xFFF0F0F0)),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFF0F0F0)),
           const SizedBox(height: 20),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildActionItem(
-                context,
-                'assets/icons/scan.png',
-                "Scan Barcode",
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const ScanPage()),
-                  );
-                },
+              Expanded(
+                child: _buildActionItem(
+                  path: 'assets/icons/scan.png',
+                  label: 'Scan Barcode',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (BuildContext context) {
+                          return const ScanPage();
+                        },
+                      ),
+                    );
+                  },
+                ),
               ),
-              _buildActionItem(
-                context,
-                'assets/icons/topup.png',
-                "Top Up",
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const IsiSaldoPage(),
-                    ),
-                  );
-                },
+              Expanded(
+                child: _buildActionItem(
+                  path: 'assets/icons/topup.png',
+                  label: 'Top Up',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (BuildContext context) {
+                          return const IsiSaldoPage();
+                        },
+                      ),
+                    );
+                  },
+                ),
               ),
-              _buildActionItem(
-                context,
-                'assets/icons/panah.png',
-                "Transfer",
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const TransferPage(),
-                    ),
-                  );
-                },
+              Expanded(
+                child: _buildActionItem(
+                  path: 'assets/icons/panah.png',
+                  label: 'Transfer',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (BuildContext context) {
+                          return const TransferPage();
+                        },
+                      ),
+                    );
+                  },
+                ),
               ),
-              _buildActionItem(
-                context,
-                'assets/icons/lock.png',
-                "History",
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const RefundsScreen(),
-                    ),
-                  );
-                },
+              Expanded(
+                child: _buildActionItem(
+                  path: 'assets/icons/lock.png',
+                  label: 'History',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (BuildContext context) {
+                          return const RefundsScreen();
+                        },
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -193,33 +291,80 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildActionItem(
-    BuildContext context,
-    String path,
-    String label, {
+  Widget _buildActionItem({
+    required String path,
+    required String label,
     VoidCallback? onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 75,
-        child: Column(
-          children: [
-            Image.asset(path, height: 35, width: 35),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF5A6B7D),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(path, height: 35, width: 35, fit: BoxFit.contain),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 28,
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    height: 1.2,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF5A6B7D),
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required String label,
+    required String value,
+    required String path,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Image.asset(path, height: 35, width: 35, fit: BoxFit.contain),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2D3E50),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -230,7 +375,7 @@ class HomeScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            "Your active payment",
+            'Your active payment',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -239,6 +384,7 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 15),
           Container(
+            width: double.infinity,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFFFF7066), Color(0xFFFF8A84)],
@@ -246,6 +392,7 @@ class HomeScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(30),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Padding(
                   padding: const EdgeInsets.all(15),
@@ -256,22 +403,33 @@ class HomeScreen extends StatelessWidget {
                         color: Colors.white,
                       ),
                       const SizedBox(width: 10),
-                      const Text(
-                        "Digital Voucher",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                      const Expanded(
+                        child: Text(
+                          'Digital Voucher',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 8),
                       ElevatedButton(
                         onPressed: () {},
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white.withOpacity(0.3),
+                          backgroundColor: Colors.white.withOpacity(0.30),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          minimumSize: const Size(0, 36),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           shape: const StadiumBorder(),
                         ),
                         child: const Text(
-                          "Pakai",
+                          'Pakai',
                           style: TextStyle(color: Colors.white, fontSize: 12),
                         ),
                       ),
@@ -279,46 +437,73 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 Container(
+                  width: double.infinity,
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.all(Radius.circular(30)),
                   ),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       _buildMenuTile(
-                        'assets/icons/lokasi.png',
-                        "Find nearest return point",
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const MapsPage(),
-                          ),
-                        ),
+                        path: 'assets/icons/lokasi.png',
+                        title: 'Find nearest return point',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (BuildContext context) {
+                                return const MapsPage();
+                              },
+                            ),
+                          );
+                        },
                       ),
                       _buildDivider(),
                       _buildMenuTile(
-                        'assets/icons/panahb.png',
-                        "Exchange balance for goods",
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const EcomerPage(),
-                          ),
-                        ),
+                        path: 'assets/icons/panahb.png',
+                        title: 'Exchange balance for goods',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (BuildContext context) {
+                                return const EcomerPage();
+                              },
+                            ),
+                          );
+                        },
                       ),
                       _buildDivider(),
                       _buildMenuTile(
-                        'assets/icons/love.png',
-                        "Charities",
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const BantuanPage(),
-                          ),
-                        ),
+                        path: 'assets/icons/love.png',
+                        title: 'Charities',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (BuildContext context) {
+                                return const BantuanPage();
+                              },
+                            ),
+                          );
+                        },
                       ),
                       _buildDivider(),
-                      _buildMenuTile('assets/icons/plus.png', "Other"),
+                      _buildMenuTile(
+                        path: 'assets/icons/plus.png',
+                        title: 'Other',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (BuildContext context) {
+                                return const ProfilePage();
+                              },
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -330,51 +515,57 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStatItem(String label, String value, String path) {
-    return Row(
-      children: [
-        Image.asset(path, height: 35, width: 35),
-        const SizedBox(width: 10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2D3E50),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMenuTile(String path, String title, {VoidCallback? onTap}) {
+  Widget _buildMenuTile({
+    required String path,
+    required String title,
+    VoidCallback? onTap,
+  }) {
     return Material(
       color: Colors.transparent,
       child: ListTile(
-        leading: Image.asset(path, height: 30, width: 30),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+        leading: Image.asset(path, height: 30, width: 30, fit: BoxFit.contain),
         title: Text(
           title,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF2D3E50),
+          ),
         ),
-        trailing: const Icon(Icons.chevron_right, size: 18),
+        trailing: const Icon(
+          Icons.chevron_right,
+          size: 18,
+          color: Color(0xFF5A6B7D),
+        ),
         onTap: onTap,
       ),
     );
   }
 
-  Widget _buildDivider() => const Divider(
-    height: 1,
-    color: Color(0xFFF5F5F5),
-    indent: 20,
-    endIndent: 20,
-  );
+  Widget _buildDivider() {
+    return const Divider(
+      height: 1,
+      thickness: 1,
+      color: Color(0xFFF5F5F5),
+      indent: 20,
+      endIndent: 20,
+    );
+  }
+
+  String _formatBalance(dynamic balance) {
+    if (balance == null) {
+      return 'Rp0';
+    }
+
+    final String value = balance.toString().trim();
+
+    if (value.isEmpty) {
+      return 'Rp0';
+    }
+
+    return 'Rp$value';
+  }
 }
