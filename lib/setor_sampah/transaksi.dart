@@ -1,5 +1,6 @@
 import 'package:ecocash_sekolah/home.dart';
 import 'package:ecocash_sekolah/setor_sampah/scan.dart';
+import 'package:ecocash_sekolah/app_footer.dart'; // Import untuk footer
 import 'package:flutter/material.dart';
 
 class TransaksiBerhasilScreen extends StatelessWidget {
@@ -19,29 +20,36 @@ class TransaksiBerhasilScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
-              children: [
-                _buildHeader(context),
-                Positioned(
-                  top: 130,
-                  left: 20,
-                  right: 20,
-                  child: _buildSuccessCard(items, totalAmount, sessionId),
-                ),
-              ],
-            ),
-            // Spacer agar konten card tidak tertutup bottom navbar
-            const SizedBox(height: 600),
-            const SizedBox(height: 20),
-          ],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  _buildHeader(context),
+                  Positioned(
+                    top: 130,
+                    left: 20,
+                    right: 20,
+                    child: _buildSuccessCard(items, totalAmount, sessionId),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _buildBottomActions(context),
+              ),
+              const SizedBox(height: 20),
+              const AppFooter(),
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
-      bottomNavigationBar: _buildBottomActions(context),
     );
   }
 
@@ -203,12 +211,11 @@ class TransaksiBerhasilScreen extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           OutlinedButton(
-            onPressed: () =>
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  (route) => false,
-                ),
+            onPressed: () => Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const HomeScreen()),
+              (route) => false,
+            ),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Color(0xFF4CAF50)),
               minimumSize: const Size(double.infinity, 55),

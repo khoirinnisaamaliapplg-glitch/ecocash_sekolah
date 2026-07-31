@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:ecocash_sekolah/setor_sampah/konfirmasi.dart';
+import 'package:ecocash_sekolah/app_footer.dart'; // Import untuk footer
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -70,9 +71,7 @@ class _ScanPageState extends State<ScanPage> {
 
     try {
       final response = await http.get(
-        Uri.parse(
-          ApiConfig.getSessionStatus(_qrToken!),
-        ),
+        Uri.parse(ApiConfig.getSessionStatus(_qrToken!)),
         headers: ApiConfig.headers,
       );
 
@@ -111,9 +110,7 @@ class _ScanPageState extends State<ScanPage> {
         );
       }
     } catch (error, stackTrace) {
-      debugPrint(
-        'Error ketika memeriksa sesi mesin: $error',
-      );
+      debugPrint('Error ketika memeriksa sesi mesin: $error');
 
       debugPrintStack(stackTrace: stackTrace);
     } finally {
@@ -130,32 +127,29 @@ class _ScanPageState extends State<ScanPage> {
 
     _pollCounter = 0;
 
-    _timer = Timer.periodic(
-      const Duration(seconds: 1),
-      (Timer timer) {
-        if (!mounted || _hasNavigated) {
-          timer.cancel();
-          return;
-        }
+    _timer = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+      if (!mounted || _hasNavigated) {
+        timer.cancel();
+        return;
+      }
 
-        _pollCounter++;
+      _pollCounter++;
 
-        // Cek status pemindaian mesin setiap dua detik.
-        if (_pollCounter >= 2) {
-          _pollCounter = 0;
-          _checkSessionStatus();
-        }
+      // Cek status pemindaian mesin setiap dua detik.
+      if (_pollCounter >= 2) {
+        _pollCounter = 0;
+        _checkSessionStatus();
+      }
 
-        if (_secondsLeft > 0) {
-          setState(() {
-            _secondsLeft--;
-          });
-        } else {
-          timer.cancel();
-          _fetchQrToken();
-        }
-      },
-    );
+      if (_secondsLeft > 0) {
+        setState(() {
+          _secondsLeft--;
+        });
+      } else {
+        timer.cancel();
+        _fetchQrToken();
+      }
+    });
   }
 
   /// Mengambil token QR baru dari backend.
@@ -186,13 +180,10 @@ class _ScanPageState extends State<ScanPage> {
         final Map<String, dynamic> responseData =
             jsonDecode(response.body) as Map<String, dynamic>;
 
-        final String? newToken =
-            responseData['data']?['token']?.toString();
+        final String? newToken = responseData['data']?['token']?.toString();
 
         if (newToken == null || newToken.isEmpty) {
-          throw Exception(
-            'Token QR tidak ditemukan pada respons server.',
-          );
+          throw Exception('Token QR tidak ditemukan pada respons server.');
         }
 
         setState(() {
@@ -210,9 +201,7 @@ class _ScanPageState extends State<ScanPage> {
         );
       }
     } catch (error, stackTrace) {
-      debugPrint(
-        'Error ketika mengambil token QR: $error',
-      );
+      debugPrint('Error ketika mengambil token QR: $error');
 
       debugPrintStack(stackTrace: stackTrace);
 
@@ -240,32 +229,26 @@ class _ScanPageState extends State<ScanPage> {
   void _startRetryTimer() {
     _timer?.cancel();
 
-    _timer = Timer.periodic(
-      const Duration(seconds: 1),
-      (Timer timer) {
-        if (!mounted || _hasNavigated) {
-          timer.cancel();
-          return;
-        }
+    _timer = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+      if (!mounted || _hasNavigated) {
+        timer.cancel();
+        return;
+      }
 
-        if (_secondsLeft > 0) {
-          setState(() {
-            _secondsLeft--;
-          });
-        } else {
-          timer.cancel();
-          _fetchQrToken();
-        }
-      },
-    );
+      if (_secondsLeft > 0) {
+        setState(() {
+          _secondsLeft--;
+        });
+      } else {
+        timer.cancel();
+        _fetchQrToken();
+      }
+    });
   }
 
   /// Tombol konfirmasi manual.
   Future<void> _continueManually() async {
-    if (_qrToken == null ||
-        _qrToken!.isEmpty ||
-        _isLoading ||
-        _hasNavigated) {
+    if (_qrToken == null || _qrToken!.isEmpty || _isLoading || _hasNavigated) {
       return;
     }
 
@@ -275,9 +258,7 @@ class _ScanPageState extends State<ScanPage> {
 
     try {
       final response = await http.get(
-        Uri.parse(
-          ApiConfig.getSessionStatus(_qrToken!),
-        ),
+        Uri.parse(ApiConfig.getSessionStatus(_qrToken!)),
         headers: ApiConfig.headers,
       );
 
@@ -289,13 +270,10 @@ class _ScanPageState extends State<ScanPage> {
         final Map<String, dynamic> responseData =
             jsonDecode(response.body) as Map<String, dynamic>;
 
-        final dynamic machineSession =
-            responseData['data']?['machineSession'];
+        final dynamic machineSession = responseData['data']?['machineSession'];
 
         if (machineSession != null) {
-          final int? sessionId = _parseSessionId(
-            machineSession['id'],
-          );
+          final int? sessionId = _parseSessionId(machineSession['id']);
 
           if (sessionId != null) {
             _openConfirmationPage(sessionId);
@@ -308,21 +286,13 @@ class _ScanPageState extends State<ScanPage> {
           Colors.orange,
         );
       } else {
-        _showSnackBar(
-          'Gagal memeriksa status mesin.',
-          Colors.red,
-        );
+        _showSnackBar('Gagal memeriksa status mesin.', Colors.red);
       }
     } catch (error) {
-      debugPrint(
-        'Error konfirmasi manual: $error',
-      );
+      debugPrint('Error konfirmasi manual: $error');
 
       if (mounted) {
-        _showSnackBar(
-          'Terjadi kesalahan saat memeriksa mesin.',
-          Colors.red,
-        );
+        _showSnackBar('Terjadi kesalahan saat memeriksa mesin.', Colors.red);
       }
     } finally {
       if (mounted && !_hasNavigated) {
@@ -346,9 +316,7 @@ class _ScanPageState extends State<ScanPage> {
       context,
       MaterialPageRoute(
         builder: (BuildContext context) {
-          return SetorSampahScreen(
-            sessionId: sessionId,
-          );
+          return SetorSampahScreen(sessionId: sessionId);
         },
       ),
     );
@@ -359,15 +327,10 @@ class _ScanPageState extends State<ScanPage> {
       return value;
     }
 
-    return int.tryParse(
-      value?.toString() ?? '',
-    );
+    return int.tryParse(value?.toString() ?? '');
   }
 
-  void _showSnackBar(
-    String message,
-    Color backgroundColor,
-  ) {
+  void _showSnackBar(String message, Color backgroundColor) {
     if (!mounted) {
       return;
     }
@@ -388,19 +351,16 @@ class _ScanPageState extends State<ScanPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: LayoutBuilder(
-        builder: (
-          BuildContext context,
-          BoxConstraints constraints,
-        ) {
+        builder: (BuildContext context, BoxConstraints constraints) {
           return SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight,
-              ),
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
               child: Column(
                 children: [
                   _buildHeader(context),
+                  const SizedBox(height: 20),
+                  const AppFooter(),
                 ],
               ),
             ),
@@ -417,11 +377,7 @@ class _ScanPageState extends State<ScanPage> {
         Container(
           height: 280,
           width: double.infinity,
-          padding: const EdgeInsets.only(
-            top: 60,
-            left: 20,
-            right: 20,
-          ),
+          padding: const EdgeInsets.only(top: 60, left: 20, right: 20),
           decoration: const BoxDecoration(
             image: DecorationImage(
               image: AssetImage('assets/bg3.png'),
@@ -505,30 +461,20 @@ class _ScanPageState extends State<ScanPage> {
                 'Sistem akan mendeteksi identitas dan\n'
                 'memulai sesi transaksi Anda.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 13,
-                  height: 1.4,
-                ),
+                style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.4),
               ),
               const SizedBox(height: 35),
               LayoutBuilder(
-                builder: (
-                  BuildContext context,
-                  BoxConstraints constraints,
-                ) {
-                  final double qrContainerSize =
-                      constraints.maxWidth < 230
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final double qrContainerSize = constraints.maxWidth < 230
                       ? constraints.maxWidth
                       : 220;
 
-                  final double frameSize =
-                      constraints.maxWidth < 240
+                  final double frameSize = constraints.maxWidth < 240
                       ? constraints.maxWidth
                       : 230;
 
-                  final double qrSize =
-                      qrContainerSize - 40;
+                  final double qrSize = qrContainerSize - 40;
 
                   return Stack(
                     alignment: Alignment.center,
@@ -537,24 +483,18 @@ class _ScanPageState extends State<ScanPage> {
                         width: qrContainerSize,
                         height: qrContainerSize,
                         decoration: BoxDecoration(
-                          borderRadius:
-                              BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: Colors.grey.shade300,
                             width: 2,
                           ),
                         ),
                         child: ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(18),
+                          borderRadius: BorderRadius.circular(18),
                           child: _buildQrContent(qrSize),
                         ),
                       ),
-                      IgnorePointer(
-                        child: CustomBarcodeFrame(
-                          size: frameSize,
-                        ),
-                      ),
+                      IgnorePointer(child: CustomBarcodeFrame(size: frameSize)),
                     ],
                   );
                 },
@@ -589,27 +529,15 @@ class _ScanPageState extends State<ScanPage> {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: _isLoading
-                      ? null
-                      : _fetchQrToken,
-                  icon: const Icon(
-                    Icons.refresh,
-                    size: 18,
-                  ),
-                  label: const Text(
-                    'Refresh Kode',
-                  ),
+                  onPressed: _isLoading ? null : _fetchQrToken,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Refresh Kode'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                    ),
-                    side: const BorderSide(
-                      color: Colors.green,
-                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: const BorderSide(color: Colors.green),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                 ),
@@ -619,40 +547,31 @@ class _ScanPageState extends State<ScanPage> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed:
-                      (_isLoading ||
-                          _qrToken == null ||
-                          _isCheckingSession)
+                      (_isLoading || _qrToken == null || _isCheckingSession)
                       ? null
                       : _continueManually,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
-                    disabledBackgroundColor:
-                        Colors.grey.shade400,
+                    disabledBackgroundColor: Colors.grey.shade400,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 13,
-                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: _isCheckingSession
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child:
-                              CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Text(
                           'Lanjut ke Konfirmasi',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                 ),
               ),
@@ -660,11 +579,7 @@ class _ScanPageState extends State<ScanPage> {
               const Text(
                 'Halaman akan berpindah otomatis setelah QR dipindai mesin.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 11,
-                  height: 1.3,
-                ),
+                style: TextStyle(color: Colors.grey, fontSize: 11, height: 1.3),
               ),
             ],
           ),
@@ -676,9 +591,7 @@ class _ScanPageState extends State<ScanPage> {
   Widget _buildQrContent(double qrSize) {
     if (_isLoading) {
       return const Center(
-        child: CircularProgressIndicator(
-          color: Colors.green,
-        ),
+        child: CircularProgressIndicator(color: Colors.green),
       );
     }
 
@@ -689,10 +602,7 @@ class _ScanPageState extends State<ScanPage> {
           child: Text(
             'Gagal memuat QR',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.red,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
           ),
         ),
       );
@@ -712,19 +622,14 @@ class _ScanPageState extends State<ScanPage> {
 class CustomBarcodeFrame extends StatelessWidget {
   final double size;
 
-  const CustomBarcodeFrame({
-    super.key,
-    required this.size,
-  });
+  const CustomBarcodeFrame({super.key, required this.size});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(
-        painter: BarcodeFramePainter(),
-      ),
+      child: CustomPaint(painter: BarcodeFramePainter()),
     );
   }
 }
@@ -766,26 +671,15 @@ class BarcodeFramePainter extends CustomPainter {
 
     canvas.drawPath(
       Path()
-        ..moveTo(
-          size.width - cornerSize,
-          size.height,
-        )
-        ..lineTo(
-          size.width,
-          size.height,
-        )
-        ..lineTo(
-          size.width,
-          size.height - cornerSize,
-        ),
+        ..moveTo(size.width - cornerSize, size.height)
+        ..lineTo(size.width, size.height)
+        ..lineTo(size.width, size.height - cornerSize),
       paint,
     );
   }
 
   @override
-  bool shouldRepaint(
-    covariant CustomPainter oldDelegate,
-  ) {
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
     return false;
   }
 }

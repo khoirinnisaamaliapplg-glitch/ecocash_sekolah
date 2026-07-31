@@ -9,6 +9,7 @@ import 'package:ecocash_sekolah/refund/refund.dart';
 import 'package:ecocash_sekolah/saldo/saldo.dart';
 import 'package:ecocash_sekolah/setor_sampah/scan.dart';
 import 'package:ecocash_sekolah/transfer/transfer.dart';
+import 'package:ecocash_sekolah/app_footer.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -85,6 +86,7 @@ class HomeScreen extends StatelessWidget {
                         const SizedBox(height: 40),
                         _buildCombinedPaymentMenu(context),
                         const SizedBox(height: 50),
+                        const AppFooter(),
                       ],
                     ),
                   ),

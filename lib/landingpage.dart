@@ -92,14 +92,14 @@ class _SplashLandingPageState extends State<SplashLandingPage> {
 
                   // Teks Hak Cipta
                   const Text(
-                    "Copyright © 2026 EcoCahs Indoneisia",
+                    " Green School App powered",
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12, color: Color(0xFF7F8C8D)),
                   ),
 
                   // Teks Pembuat
                   const Text(
-                    "Created by: PT Ideas Edvolution Technology",
+                    "Created by: EcoCash Indonesia PT Ideas Edvolution Technology",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,

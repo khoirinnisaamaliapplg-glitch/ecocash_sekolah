@@ -5,6 +5,7 @@ import 'package:flutter/services.dart'; // Untuk HapticFeedback
 import 'package:http/http.dart' as http;
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:ecocash_sekolah/setor_sampah/transaksi.dart';
+import 'package:ecocash_sekolah/app_footer.dart'; // Import untuk footer
 
 class SetorSampahScreen extends StatefulWidget {
   final int? sessionId;
@@ -72,17 +73,21 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
 
           // Extract waste items from the session detail
           final List items = data['items'] ?? [];
-          final double totalWeight =
-              (data['summary']?['currentWeight'] ?? 0).toDouble();
-          final double totalPrice =
-              (data['summary']?['totalPrice'] ?? 0).toDouble();
+          final double totalWeight = (data['summary']?['currentWeight'] ?? 0)
+              .toDouble();
+          final double totalPrice = (data['summary']?['totalPrice'] ?? 0)
+              .toDouble();
 
           setState(() {
-            _wasteItems = items.map((item) => {
-              'wasteType': item['wasteType'] ?? 'Sampah',
-              'weight': (item['weight'] ?? 0).toString(),
-              'totalPrice': (item['totalPrice'] ?? 0).toString(),
-            }).toList();
+            _wasteItems = items
+                .map(
+                  (item) => {
+                    'wasteType': item['wasteType'] ?? 'Sampah',
+                    'weight': (item['weight'] ?? 0).toString(),
+                    'totalPrice': (item['totalPrice'] ?? 0).toString(),
+                  },
+                )
+                .toList();
             _currentTotalWeight = totalWeight;
             _currentTotalPrice = totalPrice;
           });
@@ -118,7 +123,10 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       );
 
       if (confirmResponse.statusCode != 200) {
-        _showSnackBar("Gagal konfirmasi: ${confirmResponse.statusCode}", Colors.red);
+        _showSnackBar(
+          "Gagal konfirmasi: ${confirmResponse.statusCode}",
+          Colors.red,
+        );
         return;
       }
 
@@ -141,14 +149,21 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
 
         successData = {
           'sessionId': widget.sessionId.toString(),
-          'totalAmount': detailData['summary']?['totalPrice']?.toString() ?? '0',
+          'totalAmount':
+              detailData['summary']?['totalPrice']?.toString() ?? '0',
           'earned': confirmData['data']?['earned']?.toString() ?? '0',
           'balance': confirmData['data']?['balance']?.toString() ?? '0',
-          'wasteTransactions': (detailData['items'] as List?)?.map((item) => {
-            'wasteType': {'name': item['wasteType'] ?? 'Sampah'},
-            'weight': (item['weight'] ?? 0).toString(),
-            'amount': (item['totalPrice'] ?? 0).toString(),
-          }).toList() ?? [],
+          'wasteTransactions':
+              (detailData['items'] as List?)
+                  ?.map(
+                    (item) => {
+                      'wasteType': {'name': item['wasteType'] ?? 'Sampah'},
+                      'weight': (item['weight'] ?? 0).toString(),
+                      'amount': (item['totalPrice'] ?? 0).toString(),
+                    },
+                  )
+                  .toList() ??
+              [],
         };
       } else {
         // Fallback if detail fetch fails
@@ -198,53 +213,15 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
           ),
           iconTheme: const IconThemeData(color: Colors.white),
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            children: [
-              // --- Status Card ---
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black12, blurRadius: 10),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    if (!_isReadyToConfirm) ...[
-                      const CircularProgressIndicator(color: Color(0xFF4CAF50)),
-                      const SizedBox(height: 16),
-                    ] else ...[
-                      const Icon(Icons.check_circle,
-                          color: Color(0xFF4CAF50), size: 48),
-                      const SizedBox(height: 12),
-                    ],
-                    Text(
-                      _statusMesin,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: _isReadyToConfirm
-                            ? Colors.green[700]
-                            : Colors.grey[700],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // --- Live Waste Items List ---
-              if (_wasteItems.isNotEmpty)
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              children: [
+                // --- Status Card ---
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
@@ -253,146 +230,205 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                     ],
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.recycling,
-                              color: Color(0xFF4CAF50), size: 20),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Sampah yang Disetor',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE8F5E9),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${_wasteItems.length} item',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF388E3C),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Divider(height: 24),
-
-                      // Waste items list
-                      ..._wasteItems.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final item = entry.value;
-                        final wasteType = item['wasteType'] ?? 'Sampah';
-                        final weight = item['weight'] ?? '0';
-                        final price = item['totalPrice'] ?? '0';
-                        return Padding(
-                          padding: EdgeInsets.only(
-                              bottom: index < _wasteItems.length - 1 ? 12 : 0),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE8F5E9),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.delete_outline,
-                                    color: Color(0xFF4CAF50), size: 22),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      wasteType,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '$weight Kg',
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                'Rp $price',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: Color(0xFF388E3C),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-
-                      const Divider(height: 24),
-
-                      // Running total
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Total Berat',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 14,
-                            ),
-                          ),
-                          Text(
-                            '${_currentTotalWeight.toStringAsFixed(2)} Kg',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Estimasi Pendapatan',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          Text(
-                            'Rp ${_currentTotalPrice.toStringAsFixed(0)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              color: Color(0xFF388E3C),
-                            ),
-                          ),
-                        ],
+                      if (!_isReadyToConfirm) ...[
+                        const CircularProgressIndicator(
+                          color: Color(0xFF4CAF50),
+                        ),
+                        const SizedBox(height: 16),
+                      ] else ...[
+                        const Icon(
+                          Icons.check_circle,
+                          color: Color(0xFF4CAF50),
+                          size: 48,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      Text(
+                        _statusMesin,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: _isReadyToConfirm
+                              ? Colors.green[700]
+                              : Colors.grey[700],
+                        ),
                       ),
                     ],
                   ),
                 ),
-            ],
+
+                const SizedBox(height: 20),
+
+                // --- Live Waste Items List ---
+                if (_wasteItems.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black12, blurRadius: 10),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.recycling,
+                              color: Color(0xFF4CAF50),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Sampah yang Disetor',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F5E9),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${_wasteItems.length} item',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF388E3C),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 24),
+
+                        // Waste items list
+                        ..._wasteItems.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final item = entry.value;
+                          final wasteType = item['wasteType'] ?? 'Sampah';
+                          final weight = item['weight'] ?? '0';
+                          final price = item['totalPrice'] ?? '0';
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: index < _wasteItems.length - 1 ? 12 : 0,
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE8F5E9),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.delete_outline,
+                                    color: Color(0xFF4CAF50),
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        wasteType,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '$weight Kg',
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  'Rp $price',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Color(0xFF388E3C),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+
+                        const Divider(height: 24),
+
+                        // Running total
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Total Berat',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
+                              ),
+                            ),
+                            Text(
+                              '${_currentTotalWeight.toStringAsFixed(2)} Kg',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Estimasi Pendapatan',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Text(
+                              'Rp ${_currentTotalPrice.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                                color: Color(0xFF388E3C),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 20),
+                const AppFooter(),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         ),
         bottomNavigationBar: Padding(

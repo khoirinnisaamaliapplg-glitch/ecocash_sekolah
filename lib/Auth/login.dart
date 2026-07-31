@@ -4,7 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:ecocash_sekolah/Auth/registrasi.dart';
 import 'dart:convert';
 import 'package:ecocash_sekolah/ipconfig.dart';
-import 'package:jwt_decoder/jwt_decoder.dart'; // Import untuk membaca isi token
+import 'package:jwt_decoder/jwt_decoder.dart';
+import 'package:ecocash_sekolah/app_footer.dart'; // Import untuk membaca isi token
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -304,6 +305,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
               const SizedBox(height: 24),
+              const AppFooter(), // Menambahkan footer di bagian bawah halaman login
             ],
           ),
         ),

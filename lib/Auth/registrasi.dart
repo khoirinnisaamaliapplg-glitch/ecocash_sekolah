@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:ecocash_sekolah/ipconfig.dart';
+import 'package:ecocash_sekolah/app_footer.dart'; // Import untuk footer
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -125,6 +126,8 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
               ),
             ),
+            const SizedBox(height: 20),
+            const AppFooter(), // Menambahkan footer di bagian bawah halaman registrasi
           ],
         ),
       ),

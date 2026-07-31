@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:ecocash_sekolah/app_footer.dart';
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -435,7 +436,9 @@ class _RefundsScreenState extends State<RefundsScreen> {
                   else
                     _buildSessionList(sessions),
 
-                  const SizedBox(height: 50),
+                  const SizedBox(height: 24),
+                  const AppFooter(),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
