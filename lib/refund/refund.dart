@@ -273,7 +273,12 @@ class _RefundsScreenState extends State<RefundsScreen> {
       _sessionsFuture = newFuture;
     });
 
-    await newFuture;
+    try {
+      await newFuture;
+    } catch (error) {
+      // FutureBuilder menampilkan error dan tombol Coba Lagi.
+      debugPrint('Gagal menyegarkan riwayat sesi: $error');
+    }
   }
 
   // ============================================================
