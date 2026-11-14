@@ -1,9 +1,9 @@
-import 'dart:convert';
-
 import 'package:ecocash_sekolah/app_footer.dart';
+import 'package:ecocash_sekolah/core/api_client.dart';
 import 'package:ecocash_sekolah/ipconfig.dart';
+import 'package:ecocash_sekolah/refund/session_export.dart';
+import 'package:ecocash_sekolah/setor_sampah/konfirmasi.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 class RefundsScreen extends StatefulWidget {
@@ -14,7 +14,27 @@ class RefundsScreen extends StatefulWidget {
 }
 
 class _RefundsScreenState extends State<RefundsScreen> {
-  late Future<List<Map<String, dynamic>>> _sessionsFuture;
+  /// Ukuran halaman. Sama dengan default server, jadi `page`/`limit` konsisten
+  /// dan `meta.totalPages` bisa dipakai langsung.
+  static const int _pageSize = 10;
+
+  /// Baris yang sudah dimuat (bertambah setiap halaman berikutnya).
+  final List<Map<String, dynamic>> _sessions = [];
+
+  /// Sesi yang masih terbuka (`ACTIVE` / `WAITING_CONFIRMATION`).
+  ///
+  /// Ditampilkan di atas riwayat dan **hanya bila ada isinya** — pengguna
+  /// tidak perlu melihat bagian kosong saat tidak sedang menyetor.
+  final List<Map<String, dynamic>> _activeSessions = [];
+
+  /// Rincian item per sesi, dimuat saat baris dibuka lalu di-cache.
+  ///
+  /// Dimuat lazy supaya daftar riwayat tetap ringan (bukan N+1 lagi):
+  /// `GET /machine-sessions/{id}` hanya dipanggil untuk sesi yang benar-benar
+  /// dibuka pengguna.
+  final Map<int, Future<List<Map<String, dynamic>>>> _itemsCache = {};
+
+  final ScrollController _scrollController = ScrollController();
 
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'id_ID',
@@ -22,235 +42,163 @@ class _RefundsScreenState extends State<RefundsScreen> {
     decimalDigits: 0,
   );
 
+  /// Halaman yang sedang ditampilkan (1-based) dan totalnya dari `meta`.
+  int _page = 1;
+  int _totalPages = 1;
+  int _totalSessions = 0;
+
+  bool _isLoadingFirstPage = true;
+  bool _isLoadingMore = false;
+  Object? _error;
+
+  /// Sedang menyiapkan file CSV (mengambil semua halaman + menulis file).
+  bool _isExporting = false;
+
+  /// Progres ekspor: baris terkumpul / total menurut `meta.total`.
+  int _exportLoaded = 0;
+  int _exportTotal = 0;
+
   @override
   void initState() {
     super.initState();
 
-    _sessionsFuture = _fetchSessions();
+    _scrollController.addListener(_onScroll);
+
+    _loadFirstPage();
+
+    _loadActiveSessions();
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+
+    super.dispose();
   }
 
   // ============================================================
   // FETCH SESSION HISTORY
   // ============================================================
 
-  Future<List<Map<String, dynamic>>> _fetchSessions() async {
-    final response = await http.get(
-      Uri.parse(ApiConfig.getMySessionHistory),
-      headers: ApiConfig.headers,
+  /// Satu halaman riwayat + `meta` (total & totalPages) dari server.
+  Future<List<Map<String, dynamic>>> _fetchPage(int page) async {
+    final Map<String, dynamic> envelope = await ApiClient.getEnvelope(
+      '${ApiConfig.getMySessionHistory}?page=$page&limit=$_pageSize',
     );
 
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Gagal memuat riwayat: '
-        '${response.statusCode}',
-      );
+    final dynamic data = envelope['data'];
+
+    final List<Map<String, dynamic>> rows = data is List
+        ? data
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+        : <Map<String, dynamic>>[];
+
+    final dynamic meta = envelope['meta'];
+
+    if (meta is Map) {
+      _totalPages = meta['totalPages'] is num
+          ? (meta['totalPages'] as num).toInt()
+          : page;
+
+      _totalSessions = meta['total'] is num
+          ? (meta['total'] as num).toInt()
+          : rows.length;
+    } else {
+      _totalPages = page;
+
+      _totalSessions = rows.length;
     }
 
-    final dynamic decodedResponse = jsonDecode(response.body);
-
-    if (decodedResponse is! Map<String, dynamic>) {
-      throw Exception('Format respons riwayat tidak sesuai');
-    }
-
-    final dynamic rawData = decodedResponse['data'];
-
-    if (rawData is! List) {
-      return [];
-    }
-
-    final List<Map<String, dynamic>> sessions = rawData
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-
-    /*
-     * Setiap sesi dilengkapi dengan:
-     * 1. Detail sesi untuk menghitung berat dan pendapatan.
-     * 2. Detail mesin untuk memperoleh lokasi.
-     */
-    final List<Map<String, dynamic>> completedSessions = await Future.wait(
-      sessions.map(_completeSessionData),
-    );
-
-    return completedSessions;
+    return rows;
   }
 
-  Future<Map<String, dynamic>> _completeSessionData(
-    Map<String, dynamic> session,
-  ) async {
-    final Map<String, dynamic> result = Map<String, dynamic>.from(session);
+  Future<void> _loadFirstPage() async {
+    // Rincian item bisa bertambah selama sesinya masih ACTIVE.
+    _itemsCache.clear();
 
-    final Map<String, dynamic> machine = _extractMap(session['machine']);
+    if (mounted) {
+      setState(() {
+        // Saat pull-to-refresh daftar lama tetap tampil.
+        _isLoadingFirstPage = _sessions.isEmpty;
 
-    result['machine'] = machine;
-
-    final String sessionId = session['id']?.toString() ?? '';
-
-    final int? machineId = int.tryParse(machine['id']?.toString() ?? '');
-
-    // Ambil detail sesi dan detail mesin secara bersamaan.
-    final List<Future<void>> requests = [];
-
-    if (sessionId.isNotEmpty) {
-      requests.add(_addSessionDetail(result, sessionId));
+        _error = null;
+      });
     }
 
-    if (machineId != null) {
-      requests.add(_addMachineDetail(result, machineId));
-    }
-
-    await Future.wait(requests);
-
-    // Pastikan selalu terdapat nilai numerik.
-    result['currentWeight'] = _toDouble(result['currentWeight']);
-
-    result['totalPrice'] = _toDouble(result['totalPrice']);
-
-    return result;
-  }
-
-  // ============================================================
-  // FETCH SESSION DETAIL
-  // ============================================================
-
-  Future<void> _addSessionDetail(
-    Map<String, dynamic> target,
-    String sessionId,
-  ) async {
     try {
-      final response = await http.get(
-        Uri.parse(ApiConfig.getSessionDetail(sessionId)),
-        headers: ApiConfig.headers,
-      );
+      final List<Map<String, dynamic>> rows = await _fetchPage(1);
 
-      if (response.statusCode != 200) {
-        debugPrint(
-          'Detail sesi $sessionId gagal: '
-          '${response.statusCode}',
+      if (!mounted) return;
+
+      setState(() {
+        _sessions
+          ..clear()
+          ..addAll(rows);
+
+        _page = 1;
+
+        _isLoadingFirstPage = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoadingFirstPage = false;
+
+        _error = error;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || _isLoadingFirstPage || _page >= _totalPages) {
+      return;
+    }
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final List<Map<String, dynamic>> rows = await _fetchPage(_page + 1);
+
+      if (!mounted) return;
+
+      setState(() {
+        // Buang duplikat bila ada sesi baru masuk di antara dua halaman.
+        final Set<String> known = _sessions
+            .map((session) => '${session['id']}')
+            .toSet();
+
+        _sessions.addAll(
+          rows.where((row) => !known.contains('${row['id']}')),
         );
 
-        return;
-      }
+        _page += 1;
 
-      final dynamic decoded = jsonDecode(response.body);
-
-      if (decoded is! Map<String, dynamic>) {
-        return;
-      }
-
-      final Map<String, dynamic> detail = decoded['data'] is Map
-          ? Map<String, dynamic>.from(decoded['data'])
-          : decoded;
-
-      final List<dynamic> items = detail['items'] is List
-          ? List<dynamic>.from(detail['items'])
-          : [];
-
-      double itemsWeight = 0;
-      double itemsPrice = 0;
-
-      for (final dynamic rawItem in items) {
-        if (rawItem is! Map) {
-          continue;
-        }
-
-        final Map<String, dynamic> item = Map<String, dynamic>.from(rawItem);
-
-        itemsWeight += _toDouble(item['weight']);
-
-        itemsPrice += _toDouble(item['totalPrice']);
-      }
-
-      final Map<String, dynamic> summary = _extractMap(detail['summary']);
-
-      final double summaryWeight = _toDouble(summary['currentWeight']);
-
-      final double summaryPrice = _toDouble(summary['totalPrice']);
-
-      final double historyWeight = _toDouble(target['currentWeight']);
-
-      final double historyPrice = _toDouble(target['totalPrice']);
-
-      /*
-       * Prioritas nilai:
-       * 1. Hasil penjumlahan items.
-       * 2. Summary detail sesi.
-       * 3. Nilai dari daftar history.
-       */
-      target['currentWeight'] = itemsWeight > 0
-          ? itemsWeight
-          : summaryWeight > 0
-          ? summaryWeight
-          : historyWeight;
-
-      target['totalPrice'] = itemsPrice > 0
-          ? itemsPrice
-          : summaryPrice > 0
-          ? summaryPrice
-          : historyPrice;
-
-      if (detail['status'] != null) {
-        target['status'] = detail['status'];
-      }
-
-      if (detail['startedAt'] != null) {
-        target['startedAt'] = detail['startedAt'];
-      }
-
-      if (detail['endedAt'] != null) {
-        target['endedAt'] = detail['endedAt'];
-      }
-
-      target['items'] = items;
+        _isLoadingMore = false;
+      });
     } catch (error) {
-      debugPrint(
-        'Gagal mengambil detail sesi '
-        '$sessionId: $error',
+      if (!mounted) return;
+
+      setState(() => _isLoadingMore = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal memuat sesi berikutnya: $error')),
       );
     }
   }
 
-  // ============================================================
-  // FETCH MACHINE DETAIL
-  // ============================================================
+  /// Halaman berikutnya dimuat otomatis saat mendekati dasar daftar.
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
 
-  Future<void> _addMachineDetail(
-    Map<String, dynamic> target,
-    int machineId,
-  ) async {
-    try {
-      final response = await http.get(
-        Uri.parse(ApiConfig.getMachineById(machineId)),
-        headers: ApiConfig.headers,
-      );
+    final ScrollPosition position = _scrollController.position;
 
-      if (response.statusCode != 200) {
-        debugPrint(
-          'Detail mesin $machineId gagal: '
-          '${response.statusCode}',
-        );
-
-        return;
-      }
-
-      final dynamic decoded = jsonDecode(response.body);
-
-      if (decoded is! Map<String, dynamic>) {
-        return;
-      }
-
-      final Map<String, dynamic> machineDetail = decoded['data'] is Map
-          ? Map<String, dynamic>.from(decoded['data'])
-          : decoded;
-
-      final Map<String, dynamic> oldMachine = _extractMap(target['machine']);
-
-      target['machine'] = {...oldMachine, ...machineDetail};
-    } catch (error) {
-      debugPrint(
-        'Gagal mengambil detail mesin '
-        '$machineId: $error',
-      );
+    if (position.pixels >= position.maxScrollExtent - 240) {
+      _loadMore();
     }
   }
 
@@ -266,19 +214,322 @@ class _RefundsScreenState extends State<RefundsScreen> {
   // REFRESH
   // ============================================================
 
+  /// Pull-to-refresh dan tombol "Coba Lagi" selalu mulai dari halaman 1.
+  /// Sesi yang masih terbuka ikut disegarkan karena tampil di atas daftar.
   Future<void> _refreshSessions() async {
-    final Future<List<Map<String, dynamic>>> newFuture = _fetchSessions();
+    await Future.wait<void>([_loadFirstPage(), _loadActiveSessions()]);
+  }
+
+  // ============================================================
+  // ACTIVE SESSIONS (bagian atas halaman)
+  // ============================================================
+
+  /// Dua status diambil paralel: `status` hanya menerima satu nilai per
+  /// request, sedangkan sesi `ACTIVE` (mesin sedang menimbang) juga perlu
+  /// tampil walau prioritasnya di bawah `WAITING_CONFIRMATION`.
+  Future<void> _loadActiveSessions() async {
+    try {
+      final List<dynamic> payloads = await Future.wait<dynamic>([
+        ApiClient.get(
+          '${ApiConfig.getMySessionHistory}'
+          '?status=WAITING_CONFIRMATION&limit=50',
+        ),
+        ApiClient.get(
+          '${ApiConfig.getMySessionHistory}?status=ACTIVE&limit=50',
+        ),
+      ]);
+
+      final List<Map<String, dynamic>> sessions = [];
+
+      for (final dynamic payload in payloads) {
+        if (payload is! List) continue;
+
+        for (final dynamic row in payload) {
+          if (row is Map) sessions.add(Map<String, dynamic>.from(row));
+        }
+      }
+
+      // Yang uangnya menunggu didahulukan, lalu yang paling baru.
+      sessions.sort((a, b) {
+        final int rankA = _activeRank(a['status']);
+        final int rankB = _activeRank(b['status']);
+
+        if (rankA != rankB) return rankA.compareTo(rankB);
+
+        return _sessionDate(b['startedAt']).compareTo(_sessionDate(a['startedAt']));
+      });
+
+      if (!mounted) return;
+
+      setState(() {
+        _activeSessions
+          ..clear()
+          ..addAll(sessions);
+      });
+    } catch (error) {
+      // Bagian tambahan: kegagalannya tidak boleh mengganggu riwayat.
+      debugPrint('Gagal memuat sesi aktif: $error');
+    }
+  }
+
+  int _activeRank(dynamic status) {
+    switch (status?.toString().toUpperCase()) {
+      case 'WAITING_CONFIRMATION':
+        return 0;
+      case 'ACTIVE':
+        return 1;
+      default:
+        return 2;
+    }
+  }
+
+  DateTime _sessionDate(dynamic value) =>
+      DateTime.tryParse(value?.toString() ?? '') ??
+      DateTime.fromMillisecondsSinceEpoch(0);
+
+  Future<void> _openActiveSession(int sessionId) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (BuildContext context) {
+          return SetorSampahScreen(sessionId: sessionId);
+        },
+      ),
+    );
+
+    if (!mounted) return;
+
+    // Sesi bisa berubah status (dikonfirmasi / dibatalkan) setelah layar itu.
+    await _refreshSessions();
+  }
+
+  Widget _buildActiveSessionsSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.pending_actions_rounded,
+                size: 18,
+                color: Color(0xFFEF6C00),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Sesi Aktif',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2D3E50),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${_activeSessions.length}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFEF6C00),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          for (final Map<String, dynamic> session in _activeSessions) ...[
+            _buildActiveSessionCard(session),
+            const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveSessionCard(Map<String, dynamic> session) {
+    final String status = (session['status'] ?? '').toString().toUpperCase();
+
+    final bool waiting = status == 'WAITING_CONFIRMATION';
+
+    final int? sessionId = int.tryParse('${session['id'] ?? ''}');
+
+    final double weight = _toDouble(session['currentWeight']);
+
+    final double price = _toDouble(session['totalPrice']);
+
+    final Color accent = waiting
+        ? const Color(0xFFEF6C00)
+        : const Color(0xFF1976D2);
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: sessionId == null ? null : () => _openActiveSession(sessionId),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: accent.withOpacity(0.25)),
+            color: waiting ? const Color(0xFFFFF8EE) : const Color(0xFFF2F7FD),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  waiting
+                      ? Icons.pending_actions_rounded
+                      : Icons.scale_rounded,
+                  color: accent,
+                  size: 20,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      waiting ? 'Menunggu konfirmasi' : 'Sedang menimbang',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_getMachineName(session)} · '
+                      '${_formatDate(session['startedAt'])}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Color(0xFF7A8A9A),
+                      ),
+                    ),
+                    if (weight > 0 || price > 0) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        '${weight.toStringAsFixed(2)} kg · '
+                        '${_currencyFormat.format(price)}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF5A6A7A),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Icon(Icons.chevron_right_rounded, color: accent, size: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // UNDUH RIWAYAT (CSV)
+  // ============================================================
+
+  /// Unduh **seluruh** riwayat setor sebagai CSV lalu buka share sheet.
+  ///
+  /// Berbeda dari daftar di layar yang bertambah per halaman, ekspor
+  /// mengambil semua halaman dari server supaya file-nya utuh.
+  Future<void> _exportHistory() async {
+    if (_isExporting) return;
 
     setState(() {
-      _sessionsFuture = newFuture;
+      _isExporting = true;
+      _exportLoaded = 0;
+      _exportTotal = 0;
     });
 
     try {
-      await newFuture;
-    } catch (error) {
-      // FutureBuilder menampilkan error dan tombol Coba Lagi.
-      debugPrint('Gagal menyegarkan riwayat sesi: $error');
+      final SessionExportResult result =
+          await SessionHistoryExporter.exportToCsv(
+            onProgress: (loaded, total) {
+              if (!mounted) return;
+
+              setState(() {
+                _exportLoaded = loaded;
+                _exportTotal = total;
+              });
+            },
+          );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isExporting = false;
+        _exportLoaded = 0;
+        _exportTotal = 0;
+      });
+
+      if (result.isEmpty) {
+        _showMessage('Belum ada riwayat untuk diunduh.');
+        return;
+      }
+
+      if (result.shared) {
+        _showMessage(
+          '${result.sessionCount} sesi disiapkan sebagai ${result.fileName}.',
+        );
+      }
+    } on ApiException catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _isExporting = false;
+        _exportLoaded = 0;
+        _exportTotal = 0;
+      });
+
+      _showMessage(error.message);
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _isExporting = false;
+        _exportLoaded = 0;
+        _exportTotal = 0;
+      });
+
+      _showMessage('Gagal membuat file CSV. Coba lagi.');
     }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   // ============================================================
@@ -414,43 +665,97 @@ class _RefundsScreenState extends State<RefundsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _sessionsFuture,
-        builder: (context, snapshot) {
-          final List<Map<String, dynamic>> sessions = snapshot.data ?? [];
+      body: RefreshIndicator(
+        onRefresh: _refreshSessions,
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
+              _buildHeader(context, _sessions),
 
-          return RefreshIndicator(
-            onRefresh: _refreshSessions,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
-                children: [
-                  _buildHeader(context, sessions),
+              const SizedBox(height: 140),
 
-                  const SizedBox(height: 140),
+              // Hanya tampil bila memang ada sesi yang masih terbuka.
+              if (_activeSessions.isNotEmpty) ...[
+                _buildActiveSessionsSection(),
+                const SizedBox(height: 16),
+              ],
 
-                  if (snapshot.connectionState == ConnectionState.waiting)
-                    const Padding(
-                      padding: EdgeInsets.all(50),
-                      child: CircularProgressIndicator(),
-                    )
-                  else if (snapshot.hasError)
-                    _buildErrorState(snapshot.error.toString())
-                  else if (sessions.isEmpty)
-                    _buildEmptyState()
-                  else
-                    _buildSessionList(sessions),
+              if (_isLoadingFirstPage)
+                const Padding(
+                  padding: EdgeInsets.all(50),
+                  child: CircularProgressIndicator(),
+                )
+              else if (_error != null)
+                _buildErrorState(_error.toString())
+              else if (_sessions.isEmpty)
+                _buildEmptyState()
+              else ...[
+                _buildSessionList(_sessions),
 
-                  const SizedBox(height: 24),
-                  const AppFooter(),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-          );
-        },
+                _buildPaginationFooter(),
+              ],
+
+              const SizedBox(height: 24),
+              const AppFooter(),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  // ============================================================
+  // PAGINATION FOOTER
+  // ============================================================
+
+  Widget _buildPaginationFooter() {
+    final bool hasMore = _page < _totalPages;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, left: 20, right: 20),
+      child: Column(
+        children: [
+          Text(
+            hasMore
+                ? 'Menampilkan ${_sessions.length} dari $_totalSessions sesi'
+                : 'Semua $_totalSessions sesi sudah ditampilkan',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+
+          if (hasMore) ...[
+            const SizedBox(height: 10),
+
+            if (_isLoadingMore)
+              const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: _loadMore,
+                icon: const Icon(Icons.expand_more_rounded, size: 18),
+                label: Text(
+                  'Muat ${_remainingCount()} sesi berikutnya',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  int _remainingCount() {
+    final int remaining = _totalSessions - _sessions.length;
+
+    if (remaining <= 0) return 0;
+
+    return remaining < _pageSize ? remaining : _pageSize;
   }
 
   Widget _buildErrorState(String message) {
@@ -544,6 +849,8 @@ class _RefundsScreenState extends State<RefundsScreen> {
   Widget _buildSessionItem(Map<String, dynamic> session) {
     final String status = session['status']?.toString() ?? 'UNKNOWN';
 
+    final int? sessionId = int.tryParse('${session['id'] ?? ''}');
+
     final Color statusColor = _statusColor(status);
 
     final double currentWeight = _toDouble(session['currentWeight']);
@@ -593,6 +900,13 @@ class _RefundsScreenState extends State<RefundsScreen> {
             ),
             child: Column(
               children: [
+                _detailRow(
+                  label: 'ID Sesi',
+                  value: sessionId?.toString() ?? '-',
+                ),
+
+                const Divider(height: 22),
+
                 _detailRow(label: 'Kode Mesin', value: machineCode),
 
                 const Divider(height: 22),
@@ -656,6 +970,174 @@ class _RefundsScreenState extends State<RefundsScreen> {
               ],
             ),
           ),
+
+          if (sessionId != null) _buildItemsSection(sessionId),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // ITEM DETAIL (lazy, saat baris dibuka)
+  // ============================================================
+
+  Future<List<Map<String, dynamic>>> _itemsFor(int sessionId) {
+    return _itemsCache.putIfAbsent(sessionId, () async {
+      final dynamic payload = await ApiClient.get(
+        ApiConfig.getSessionDetail(sessionId.toString()),
+      );
+
+      if (payload is! Map) return <Map<String, dynamic>>[];
+
+      final dynamic rawItems = payload['items'];
+
+      if (rawItems is! List) return <Map<String, dynamic>>[];
+
+      return rawItems
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    });
+  }
+
+  Widget _buildItemsSection(int sessionId) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _itemsFor(sessionId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 14,
+                  color: Colors.redAccent,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Rincian item gagal dimuat: ${snapshot.error}',
+                    style: const TextStyle(fontSize: 11, color: Colors.red),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final List<Map<String, dynamic>> items = snapshot.data ?? const [];
+
+        if (items.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.only(top: 14),
+            child: Text(
+              'Tidak ada item tercatat pada sesi ini.',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Rincian Item',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF263238),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '(${items.length})',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              ...items.map(_buildItemRow),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildItemRow(Map<String, dynamic> item) {
+    final String name = item['wasteType']?.toString() ?? 'Material';
+
+    final double weight = _toDouble(item['weight']);
+
+    final double pricePerKg = _toDouble(item['pricePerKg']);
+
+    final double totalPrice = _toDouble(item['totalPrice']);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Icon(Icons.circle, size: 7, color: Color(0xFF4CAF50)),
+          ),
+
+          const SizedBox(width: 8),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF263238),
+                  ),
+                ),
+                Text(
+                  '${weight.toStringAsFixed(2)} kg'
+                  ' × ${_currencyFormat.format(pricePerKg)}/kg',
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          Text(
+            _currencyFormat.format(totalPrice),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF107569),
+            ),
+          ),
         ],
       ),
     );
@@ -696,21 +1178,78 @@ class _RefundsScreenState extends State<RefundsScreen> {
   Widget _buildListHeader() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
       decoration: const BoxDecoration(color: Color(0xFFFFD966)),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.history_rounded, color: Colors.white, size: 24),
-          SizedBox(width: 12),
-          Text(
-            'Riwayat Sesi',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
+          const Icon(Icons.history_rounded, color: Colors.white, size: 24),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Riwayat Sesi',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
             ),
           ),
+          const SizedBox(width: 8),
+          _buildExportButton(),
         ],
+      ),
+    );
+  }
+
+  /// Tombol "Unduh CSV" di kanan header daftar riwayat.
+  ///
+  /// Menampilkan progres `terkumpul/total` selama halaman demi halaman
+  /// diambil, lalu membuka share sheet berisi file CSV.
+  Widget _buildExportButton() {
+    final String label = _isExporting
+        ? (_exportTotal > 0
+              ? '$_exportLoaded/$_exportTotal'
+              : 'Menyiapkan...')
+        : 'Unduh CSV';
+
+    return Material(
+      color: const Color(0x38FFFFFF),
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _isExporting ? null : _exportHistory,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isExporting)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.download_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -787,7 +1326,16 @@ class _RefundsScreenState extends State<RefundsScreen> {
   }
 
   Widget _buildSummaryCard(List<Map<String, dynamic>> sessions) {
-    final int totalSessions = sessions.length;
+    /*
+     * "Total Sesi" memakai `meta.total` (seluruh sesi di server), sedangkan
+     * berat & pendapatan hanya bisa dijumlahkan dari baris yang sudah dimuat -
+     * karena itu ada catatan kecil selama masih ada halaman lain.
+     */
+    final int loadedSessions = sessions.length;
+
+    final int totalSessions = _totalSessions > 0
+        ? _totalSessions
+        : loadedSessions;
 
     final double totalWeight = sessions.fold<double>(0, (total, session) {
       return total + _toDouble(session['currentWeight']);
@@ -845,6 +1393,17 @@ class _RefundsScreenState extends State<RefundsScreen> {
                 ),
               ],
             ),
+
+            if (loadedSessions < totalSessions) ...[
+              const SizedBox(height: 10),
+
+              Text(
+                '* Berat dan pendapatan dihitung dari '
+                '$loadedSessions sesi terbaru.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 9, color: Colors.black45),
+              ),
+            ],
           ],
         ),
       ),

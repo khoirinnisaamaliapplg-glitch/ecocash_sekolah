@@ -225,7 +225,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
                   // LOGO
                   // =================================================
                   Image.asset(
-                    'assets/logo.png',
+                    'assets/logokids.jpeg',
                     height: 110,
                     fit: BoxFit.contain,
                   ),

@@ -46,5 +46,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- url_launcher: membuka halaman akun (reset kata sandi / verifikasi
+             email) di browser. Tanpa deklarasi ini, Android 11+ menolak
+             meluncurkan intent https dari aplikasi. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>

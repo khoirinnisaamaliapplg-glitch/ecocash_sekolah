@@ -1,8 +1,7 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:ecocash_sekolah/core/api_client.dart';
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:ecocash_sekolah/app_footer.dart';
 
@@ -55,31 +54,20 @@ class _TransferPageState extends State<TransferPage> {
     if (!mounted) return;
     setState(() => _isLoadingWallet = true);
     try {
-      final res = await http.get(
-        Uri.parse(ApiConfig.getMyWallet),
-        headers: ApiConfig.headers,
-      );
+      final data = await ApiClient.getMap(ApiConfig.getMyWallet);
+      final rawBalance = data['balance'] ?? 0;
 
-      if (res.statusCode == 200) {
-        final dynamic decoded = jsonDecode(res.body);
-        if (decoded is! Map) throw const FormatException('Respons wallet tidak valid');
-        final dynamic data = decoded['data'] is Map ? decoded['data'] : decoded;
-        final rawBalance = data['balance'] ?? 0;
-
-        if (!mounted) return;
-        setState(() {
-          _balance = (rawBalance is num)
-              ? rawBalance.toDouble()
-              : double.tryParse(rawBalance.toString()) ?? 0.0;
-        });
-      } else {
-        throw Exception('Gagal memuat saldo (${res.statusCode})');
-      }
-    } catch (e) {
-      debugPrint("Gagal memuat saldo: $e");
+      if (!mounted) return;
+      setState(() {
+        _balance = (rawBalance is num)
+            ? rawBalance.toDouble()
+            : double.tryParse(rawBalance.toString()) ?? 0.0;
+      });
+    } on ApiException catch (e) {
+      debugPrint('Gagal memuat saldo: ${e.message}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal memuat saldo: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -139,55 +127,57 @@ class _TransferPageState extends State<TransferPage> {
         "accountHolderName": _accountHolderController.text.trim(),
       };
 
-      final response = await http.post(
-        Uri.parse("${ApiConfig.baseUrl}/wallets/withdraw"),
-        headers: ApiConfig.headers,
-        body: jsonEncode(payload),
+      final result = await ApiClient.post(
+        "${ApiConfig.baseUrl}/wallets/withdraw",
+        body: payload,
       );
-
-      final dynamic decoded = jsonDecode(response.body);
-      final Map<String, dynamic> data = decoded is Map
-          ? Map<String, dynamic>.from(decoded)
+      final data = result is Map
+          ? Map<String, dynamic>.from(result)
           : <String, dynamic>{};
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 28),
-                SizedBox(width: 8),
-                Text("Permintaan Diterima"),
-              ],
-            ),
-            content: Text(
-              "Permintaan pencairan ${_currencyFormat.format(amount)} ke $_selectedProvider (${_accountNumberController.text.trim()}) diterima server dan sedang diproses.\n\nEstimasi biaya admin: ${_currencyFormat.format(adminFee)}\nSaldo setelah permintaan: ${data['data'] is Map && data['data']['balanceAfter'] != null ? _currencyFormat.format(data['data']['balanceAfter']) : 'Periksa saldo terbaru'}",
-            ),
-            actions: [
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: primary),
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _amountController.clear();
-                  _accountNumberController.clear();
-                  _accountHolderController.clear();
-                  _fetchWalletBalance();
-                },
-                child: const Text("Selesai", style: TextStyle(color: Colors.white)),
-              ),
+      if (!mounted) return;
+      final balanceAfter = data['balanceAfter'];
+      final formattedBalance = balanceAfter != null
+          ? _currencyFormat.format(
+              num.tryParse(balanceAfter.toString()) ?? 0,
+            )
+          : 'Periksa saldo terbaru';
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 28),
+              SizedBox(width: 8),
+              Text("Permintaan Diterima"),
             ],
           ),
-        );
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message']?.toString() ?? 'Penarikan saldo gagal'), backgroundColor: Colors.red),
-        );
-      }
+          content: Text(
+            "Permintaan pencairan ${_currencyFormat.format(amount)} ke $_selectedProvider (${_accountNumberController.text.trim()}) diterima server dan sedang diproses.\n\nEstimasi biaya admin: ${_currencyFormat.format(adminFee)}\nSaldo setelah permintaan: $formattedBalance",
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: primary),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _amountController.clear();
+                _accountNumberController.clear();
+                _accountHolderController.clear();
+                _fetchWalletBalance();
+              },
+              child: const Text("Selesai", style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -199,6 +189,15 @@ class _TransferPageState extends State<TransferPage> {
   }
 
   void _showTransactionHistoryDialog() {
+    /*
+     * Diambil sekali di sini, bukan di dalam `builder`. FutureBuilder yang
+     * membuat future di dalam build akan menembak request baru setiap kali
+     * sheet rebuild (scroll, setState, keyboard).
+     */
+    final Future<dynamic> historyFuture = ApiClient.get(
+      ApiConfig.getMyWalletTransactions,
+    );
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -212,20 +211,30 @@ class _TransferPageState extends State<TransferPage> {
           maxChildSize: 0.9,
           expand: false,
           builder: (_, scrollController) {
-            return FutureBuilder<http.Response>(
-              future: http.get(Uri.parse(ApiConfig.getMyWalletTransactions), headers: ApiConfig.headers),
+            return FutureBuilder<dynamic>(
+              future: historyFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                if (!snapshot.hasData || snapshot.data!.statusCode != 200) {
-                  return const Center(child: Text("Gagal memuat mutasi dompet"));
+                if (snapshot.hasError) {
+                  final error = snapshot.error;
+                  return Center(
+                    child: Text(
+                      error is ApiException
+                          ? error.message
+                          : "Gagal memuat mutasi dompet",
+                    ),
+                  );
                 }
 
-                final decoded = jsonDecode(snapshot.data!.body);
-                final dynamic rawData = decoded is Map ? decoded['data'] : null;
-                final List items = rawData is List ? rawData : (rawData is Map && rawData['items'] is List ? rawData['items'] : []);
+                final dynamic rawData = snapshot.data;
+                final List items = rawData is List
+                    ? rawData
+                    : (rawData is Map && rawData['items'] is List
+                        ? rawData['items'] as List
+                        : const []);
 
                 if (items.isEmpty) {
                   return const Center(child: Text("Belum ada riwayat transaksi"));

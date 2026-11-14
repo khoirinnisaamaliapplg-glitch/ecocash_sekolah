@@ -1,9 +1,7 @@
-import 'dart:convert';
-
+import 'package:ecocash_sekolah/core/api_client.dart';
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -75,28 +73,6 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
     }
   }
 
-  // ============================================================
-  // EXTRACT RESPONSE
-  // ============================================================
-
-  Map<String, dynamic> _extractDataMap(dynamic responseData) {
-    if (responseData is! Map) {
-      return {};
-    }
-
-    final Map<String, dynamic> responseMap = Map<String, dynamic>.from(
-      responseData,
-    );
-
-    final dynamic data = responseMap['data'];
-
-    if (data is Map) {
-      return Map<String, dynamic>.from(data);
-    }
-
-    return responseMap;
-  }
-
   Map<String, dynamic> _toMap(dynamic value) {
     if (value is Map) {
       return Map<String, dynamic>.from(value);
@@ -148,26 +124,6 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
   }
 
   // ============================================================
-  // ERROR MESSAGE
-  // ============================================================
-
-  String _getErrorMessage(dynamic decoded) {
-    if (decoded is Map) {
-      final Map<String, dynamic> map = Map<String, dynamic>.from(decoded);
-
-      if (map['message'] != null) {
-        return map['message'].toString();
-      }
-
-      if (map['error'] != null) {
-        return map['error'].toString();
-      }
-    }
-
-    return 'Terjadi kesalahan pada server.';
-  }
-
-  // ============================================================
   // MESSAGE
   // ============================================================
 
@@ -208,72 +164,14 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
       // REQUEST PROFILE + WALLET BERSAMAAN
       // ========================================================
 
-      final List<http.Response> responses = await Future.wait<http.Response>([
-        // PROFILE
-        http.get(
-          Uri.parse(ApiConfig.getUserProfile),
-          headers: ApiConfig.headers,
-        ),
-
-        // WALLET
-        http.get(Uri.parse(ApiConfig.getMyWallet), headers: ApiConfig.headers),
+      final List<Map<String, dynamic>> results = await Future.wait([
+        ApiClient.getMap(ApiConfig.getUserProfile),
+        ApiClient.getMap(ApiConfig.getMyWallet),
       ]);
 
-      final http.Response profileResponse = responses[0];
+      final Map<String, dynamic> profileData = results[0];
 
-      final http.Response walletResponse = responses[1];
-
-      // ========================================================
-      // DEBUG
-      // ========================================================
-
-      debugPrint('');
-      debugPrint('========================================');
-      debugPrint('ISI SALDO ECOCASH SEKOLAH');
-      debugPrint('PROFILE STATUS : ${profileResponse.statusCode}');
-      debugPrint('PROFILE BODY   : ${profileResponse.body}');
-      debugPrint('WALLET STATUS  : ${walletResponse.statusCode}');
-      debugPrint('WALLET BODY    : ${walletResponse.body}');
-      debugPrint('========================================');
-      debugPrint('');
-
-      // ========================================================
-      // PROFILE RESPONSE
-      // ========================================================
-
-      if (profileResponse.statusCode != 200) {
-        throw Exception(
-          'Gagal memuat profil '
-          '(${profileResponse.statusCode})',
-        );
-      }
-
-      // ========================================================
-      // WALLET RESPONSE
-      // ========================================================
-
-      if (walletResponse.statusCode != 200) {
-        throw Exception(
-          'Gagal memuat wallet '
-          '(${walletResponse.statusCode})',
-        );
-      }
-
-      // ========================================================
-      // DECODE JSON
-      // ========================================================
-
-      final dynamic decodedProfile = jsonDecode(profileResponse.body);
-
-      final dynamic decodedWallet = jsonDecode(walletResponse.body);
-
-      // ========================================================
-      // EXTRACT DATA
-      // ========================================================
-
-      final Map<String, dynamic> profileData = _extractDataMap(decodedProfile);
-
-      final Map<String, dynamic> walletData = _extractDataMap(decodedWallet);
+      final Map<String, dynamic> walletData = results[1];
 
       debugPrint('PROFILE DATA : $profileData');
 
@@ -354,37 +252,12 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
       // POST /wallets/topup
       // ========================================================
 
-      final http.Response response = await http.post(
-        Uri.parse(ApiConfig.createTopUp),
-        headers: ApiConfig.headers,
-        body: jsonEncode({'amount': amount}),
+      final dynamic result = await ApiClient.post(
+        ApiConfig.createTopUp,
+        body: {'amount': amount},
       );
 
-      debugPrint('');
-      debugPrint('========================================');
-      debugPrint('CREATE TOP UP');
-      debugPrint('STATUS : ${response.statusCode}');
-      debugPrint('BODY   : ${response.body}');
-      debugPrint('========================================');
-      debugPrint('');
-
-      dynamic decoded;
-
-      try {
-        decoded = jsonDecode(response.body);
-      } catch (_) {
-        throw Exception('Response server tidak valid.');
-      }
-
-      // ========================================================
-      // CHECK RESPONSE
-      // ========================================================
-
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        throw Exception(_getErrorMessage(decoded));
-      }
-
-      final Map<String, dynamic> data = _extractDataMap(decoded);
+      final Map<String, dynamic> data = _toMap(result);
 
       // ========================================================
       // TOP UP ID
@@ -476,22 +349,7 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
 
   Future<void> _mockPayTopUp(int topUpId) async {
     try {
-      final http.Response response = await http.post(
-        Uri.parse(ApiConfig.mockPayTopUp(topUpId)),
-        headers: ApiConfig.headers,
-      );
-
-      dynamic decoded;
-
-      try {
-        decoded = jsonDecode(response.body);
-      } catch (_) {
-        throw Exception('Response server tidak valid.');
-      }
-
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        throw Exception(_getErrorMessage(decoded));
-      }
+      await ApiClient.post(ApiConfig.mockPayTopUp(topUpId));
 
       _showMessage('Top up berhasil.');
 
@@ -529,24 +387,11 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
         });
       }
 
-      final http.Response response = await http.post(
-        Uri.parse(ApiConfig.checkTopUpStatus(topUpId)),
-        headers: ApiConfig.headers,
+      final dynamic payload = await ApiClient.post(
+        ApiConfig.checkTopUpStatus(topUpId),
       );
 
-      dynamic decoded;
-
-      try {
-        decoded = jsonDecode(response.body);
-      } catch (_) {
-        throw Exception('Response server tidak valid.');
-      }
-
-      if (response.statusCode != 200) {
-        throw Exception(_getErrorMessage(decoded));
-      }
-
-      final Map<String, dynamic> result = _extractDataMap(decoded);
+      final Map<String, dynamic> result = _toMap(payload);
 
       final Map<String, dynamic> topUp = _toMap(result['topup']);
 

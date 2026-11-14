@@ -1,9 +1,6 @@
-import 'dart:convert';
-
-import 'package:ecocash_sekolah/bantuan/bantuan.dart';
-import 'package:ecocash_sekolah/ecomer/ecomer.dart';
+import 'package:ecocash_sekolah/core/api_client.dart';
 import 'package:ecocash_sekolah/ipconfig.dart';
-import 'package:ecocash_sekolah/maps/maps.dart';
+import 'package:ecocash_sekolah/notifikasi/notifikasi.dart';
 import 'package:ecocash_sekolah/profile/profile.dart';
 import 'package:ecocash_sekolah/refund/refund.dart';
 import 'package:ecocash_sekolah/saldo/saldo.dart';
@@ -12,7 +9,6 @@ import 'package:ecocash_sekolah/transfer/transfer.dart';
 import 'package:ecocash_sekolah/app_footer.dart';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,6 +23,17 @@ class _HomeScreenState extends State<HomeScreen> {
   // ============================================================
 
   late Future<Map<String, dynamic>> _userDataFuture;
+
+  /// Jumlah sesi yang belum dikonfirmasi (`meta.total` dari
+  /// `GET /machine-sessions/my?status=WAITING_CONFIRMATION`).
+  ///
+  /// Hanya dipakai sebagai badge di menu "Riwayat Setor": daftar sesi aktifnya
+  /// sendiri sekarang ada di dalam halaman riwayat.
+  int _unconfirmedSessions = 0;
+
+  /// Notifikasi in-app yang belum dibaca (`unreadCount` dari
+  /// `GET /notifications`), untuk badge di lonceng header.
+  int _unreadNotifications = 0;
 
   // ============================================================
   // INIT
@@ -49,161 +56,44 @@ class _HomeScreenState extends State<HomeScreen> {
     // ==========================================================
 
     if (!ApiConfig.hasToken) {
-      throw Exception('Sesi login tidak ditemukan. Silakan login kembali.');
+      throw const ApiException(
+        'Sesi login tidak ditemukan. Silakan login kembali.',
+      );
     }
-
-    debugPrint('');
-    debugPrint('==============================================');
-    debugPrint('HOME ECOCASH SEKOLAH');
-    debugPrint('BASE URL : ${ApiConfig.baseUrl}');
-    debugPrint('HAS TOKEN: ${ApiConfig.hasToken}');
-    debugPrint('==============================================');
-    debugPrint('');
 
     // ==========================================================
     // REQUEST BERSAMAAN
     // ==========================================================
 
     /*
-     * Sama dengan EcoCash Indonesia.
+     * Profile, wallet dan carbon diambil secara bersamaan supaya Home
+     * tidak melakukan request satu per satu.
      *
-     * Profile, wallet dan carbon diambil secara bersamaan
-     * supaya Home tidak melakukan request satu per satu.
+     * ApiClient sudah menangani timeout, envelope `{ data }`, status
+     * non-200 (dilempar sebagai ApiException berisi pesan server) dan
+     * 401 (token dihapus + ApiClient.onUnauthorized mengarahkan ke
+     * halaman login).
      */
 
-    final List<http.Response> responses = await Future.wait<http.Response>([
-      // PROFILE
-      http.get(Uri.parse(ApiConfig.getUserProfile), headers: ApiConfig.headers),
-
-      // WALLET
-      http.get(Uri.parse(ApiConfig.getMyWallet), headers: ApiConfig.headers),
-
-      // CARBON
-      http.get(Uri.parse(ApiConfig.getMyCarbon), headers: ApiConfig.headers),
+    final List<dynamic> results = await Future.wait<dynamic>([
+      ApiClient.getMap(ApiConfig.getUserProfile),
+      ApiClient.getMap(ApiConfig.getMyWallet),
+      ApiClient.getMap(ApiConfig.getMyCarbon),
+      // Badge menu "Riwayat Setor"; tidak boleh menggagalkan Home.
+      _fetchUnconfirmedSessionCount(),
+      // Badge lonceng notifikasi; juga tidak boleh menggagalkan Home.
+      _fetchUnreadNotificationCount(),
     ]);
 
-    final http.Response profileResponse = responses[0];
-    final http.Response walletResponse = responses[1];
-    final http.Response carbonResponse = responses[2];
+    final Map<String, dynamic> profileData = results[0] as Map<String, dynamic>;
 
-    // ==========================================================
-    // DEBUG RESPONSE
-    // ==========================================================
+    final Map<String, dynamic> walletData = results[1] as Map<String, dynamic>;
 
-    debugPrint('');
-    debugPrint('========== HOME API RESPONSE ==========');
+    final Map<String, dynamic> carbonData = results[2] as Map<String, dynamic>;
 
-    debugPrint('PROFILE STATUS : ${profileResponse.statusCode}');
+    _unconfirmedSessions = results[3] as int;
 
-    debugPrint('WALLET STATUS  : ${walletResponse.statusCode}');
-
-    debugPrint('CARBON STATUS  : ${carbonResponse.statusCode}');
-
-    debugPrint('=======================================');
-    debugPrint('');
-
-    // ==========================================================
-    // AUTH ERROR
-    // ==========================================================
-
-    /*
-     * Jika token sudah tidak berlaku,
-     * hapus token agar request selanjutnya tidak memakai
-     * JWT yang sudah invalid.
-     */
-
-    if (profileResponse.statusCode == 401 ||
-        walletResponse.statusCode == 401 ||
-        carbonResponse.statusCode == 401) {
-      ApiConfig.clearToken();
-
-      throw Exception('Sesi login sudah berakhir. Silakan login kembali.');
-    }
-
-    if (profileResponse.statusCode == 403 ||
-        walletResponse.statusCode == 403 ||
-        carbonResponse.statusCode == 403) {
-      throw Exception('Akun tidak memiliki akses ke data EcoCash.');
-    }
-
-    // ==========================================================
-    // CHECK PROFILE
-    // ==========================================================
-
-    if (profileResponse.statusCode != 200) {
-      throw Exception(
-        'Gagal memuat profil '
-        '(${profileResponse.statusCode})',
-      );
-    }
-
-    // ==========================================================
-    // CHECK WALLET
-    // ==========================================================
-
-    if (walletResponse.statusCode != 200) {
-      throw Exception(
-        'Gagal memuat dompet '
-        '(${walletResponse.statusCode})',
-      );
-    }
-
-    // ==========================================================
-    // CHECK CARBON
-    // ==========================================================
-
-    if (carbonResponse.statusCode != 200) {
-      throw Exception(
-        'Gagal memuat carbon '
-        '(${carbonResponse.statusCode})',
-      );
-    }
-
-    // ==========================================================
-    // DECODE JSON
-    // ==========================================================
-
-    dynamic decodedProfile;
-    dynamic decodedWallet;
-    dynamic decodedCarbon;
-
-    try {
-      decodedProfile = jsonDecode(profileResponse.body);
-
-      decodedWallet = jsonDecode(walletResponse.body);
-
-      decodedCarbon = jsonDecode(carbonResponse.body);
-    } catch (error) {
-      debugPrint('HOME JSON DECODE ERROR: $error');
-
-      throw Exception('Response server tidak valid.');
-    }
-
-    // ==========================================================
-    // EXTRACT DATA
-    // ==========================================================
-
-    final Map<String, dynamic> profileData = _extractDataMap(decodedProfile);
-
-    final Map<String, dynamic> walletData = _extractDataMap(decodedWallet);
-
-    final Map<String, dynamic> carbonData = _extractDataMap(decodedCarbon);
-
-    // ==========================================================
-    // DEBUG DATA
-    // ==========================================================
-
-    debugPrint('');
-    debugPrint('==============================================');
-
-    debugPrint('Data profil berhasil diproses.');
-
-    debugPrint('Data dompet berhasil diproses.');
-
-    debugPrint('Data karbon berhasil diproses.');
-
-    debugPrint('==============================================');
-    debugPrint('');
+    _unreadNotifications = results[4] as int;
 
     // ==========================================================
     // MERGE DATA
@@ -255,44 +145,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       'carbonTrend': carbonData['trend'] ?? [],
     };
-  }
-
-  // ============================================================
-  // EXTRACT API DATA
-  // ============================================================
-
-  Map<String, dynamic> _extractDataMap(dynamic responseData) {
-    if (responseData is! Map) {
-      return {};
-    }
-
-    final Map<String, dynamic> responseMap = Map<String, dynamic>.from(
-      responseData,
-    );
-
-    final dynamic data = responseMap['data'];
-
-    /*
-     * Format backend:
-     *
-     * {
-     *   "message": "...",
-     *   "data": {
-     *      ...
-     *   }
-     * }
-     */
-
-    if (data is Map) {
-      return Map<String, dynamic>.from(data);
-    }
-
-    /*
-     * Kalau endpoint langsung mengembalikan object,
-     * tetap bisa diproses.
-     */
-
-    return responseMap;
   }
 
   // ============================================================
@@ -591,7 +443,9 @@ class _HomeScreenState extends State<HomeScreen> {
         Positioned(
           top: 62,
           left: 20,
-          right: 20,
+          // Sisakan ruang untuk lonceng notifikasi di kanan, supaya nama panjang
+          // tidak tertimpa tombol.
+          right: 78,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -600,7 +454,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: Colors.black,
                   fontSize: 30,
                   fontWeight: FontWeight.bold,
                 ),
@@ -608,10 +462,19 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 5),
               const Text(
                 'Siap untuk mendaur ulang?',
-                style: TextStyle(color: Colors.white, fontSize: 18),
+                style: TextStyle(color: Colors.black, fontSize: 18),
               ),
             ],
           ),
+        ),
+
+        // ======================================================
+        // NOTIFICATION BELL
+        // ======================================================
+        Positioned(
+          top: 54,
+          right: 16,
+          child: _buildNotificationBell(),
         ),
 
         // ======================================================
@@ -625,6 +488,63 @@ class _HomeScreenState extends State<HomeScreen> {
           child: _buildBalanceCard(context, data),
         ),
       ],
+    );
+  }
+
+  /// Lonceng notifikasi di header, lengkap dengan jumlah yang belum dibaca.
+  ///
+  /// Jumlahnya datang dari `GET /notifications?limit=1` (field `unreadCount`)
+  /// yang diambil bersama request Home lainnya, lalu diperbarui lagi setelah
+  /// pengguna kembali dari daftar notifikasi.
+  Widget _buildNotificationBell() {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: _openNotifications,
+        child: Padding(
+          padding: const EdgeInsets.all(11),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(
+                Icons.notifications_none_rounded,
+                color: Color(0xFF212121),
+                size: 24,
+              ),
+              if (_unreadNotifications > 0)
+                Positioned(
+                  right: -6,
+                  top: -5,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
+                    constraints: const BoxConstraints(minWidth: 18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE53935),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      _unreadNotifications > 9 ? '9+' : '$_unreadNotifications',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -966,7 +886,97 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ============================================================
-  // ACTIVE PAYMENT MENU
+  // SESSION BADGE DATA
+  // ============================================================
+
+  /// Jumlah notifikasi yang belum dibaca (`unreadCount` dari
+  /// `GET /notifications?limit=1`). Dibaca bersama request lain di Home, jadi
+  /// tidak menambah waktu tunggu.
+  Future<int> _fetchUnreadNotificationCount() async {
+    try {
+      final Map<String, dynamic> data = await ApiClient.getMap(
+        '${ApiConfig.notifications}?page=1&limit=1',
+      );
+
+      final dynamic count = data['unreadCount'];
+
+      return count is num ? count.toInt() : 0;
+    } catch (error) {
+      debugPrint('HOME unread notifications: $error');
+
+      return 0;
+    }
+  }
+
+  /// Buka daftar notifikasi; jumlah badge diperbarui setelah kembali.
+  Future<void> _openNotifications() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const NotifikasiPage()),
+    );
+
+    if (!mounted) return;
+
+    final int count = await _fetchUnreadNotificationCount();
+
+    if (mounted) setState(() => _unreadNotifications = count);
+  }
+
+  /// Jumlah sesi `WAITING_CONFIRMATION` (yang masih bisa dikonfirmasi).
+  Future<int> _fetchUnconfirmedSessionCount() async {
+    try {
+      final Map<String, dynamic> envelope = await ApiClient.getEnvelope(
+        '${ApiConfig.getMySessionHistory}?status=WAITING_CONFIRMATION&limit=1',
+      );
+
+      final dynamic meta = envelope['meta'];
+
+      if (meta is Map && meta['total'] is num) {
+        return (meta['total'] as num).toInt();
+      }
+
+      final dynamic data = envelope['data'];
+
+      return data is List ? data.length : 0;
+    } catch (error) {
+      debugPrint('HOME unconfirmed sessions: $error');
+
+      return 0;
+    }
+  }
+
+  /// Badge di kanan menu "Riwayat Setor": jumlah sesi yang belum
+  /// dikonfirmasi. Daftarnya ada di dalam halaman riwayat.
+  Widget? _openSessionBadge() {
+    if (_unconfirmedSessions <= 0) return null;
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 22),
+
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+
+      decoration: BoxDecoration(
+        color: const Color(0xFFE53935),
+
+        borderRadius: BorderRadius.circular(20),
+      ),
+
+      child: Text(
+        _unconfirmedSessions > 9 ? '9+' : '$_unconfirmedSessions',
+
+        textAlign: TextAlign.center,
+
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // MENU SECTION
   // ============================================================
 
   Widget _buildCombinedPaymentMenu(BuildContext context) {
@@ -981,7 +991,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // TITLE
           // ====================================================
           const Text(
-            'Pembayaran Aktif',
+            'Menu',
 
             style: TextStyle(
               fontSize: 18,
@@ -993,17 +1003,25 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 15),
 
           // ====================================================
-          // PAYMENT CONTAINER
+          // MENU CONTAINER
           // ====================================================
           Container(
             width: double.infinity,
 
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFFF7066), Color(0xFFFF8A84)],
-              ),
+              color: Colors.white,
 
               borderRadius: BorderRadius.circular(30),
+
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+
+                  blurRadius: 20,
+
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
 
             child: Column(
@@ -1011,212 +1029,67 @@ class _HomeScreenState extends State<HomeScreen> {
 
               children: [
                 // ==============================================
-                // DIGITAL VOUCHER
+                // SESSION HISTORY
+                //
+                // Sesi yang masih terbuka (sedang menimbang atau
+                // menunggu konfirmasi) tampil di bagian atas halaman
+                // riwayat, jadi tidak ada lagi menu "Sesi Aktif"
+                // terpisah. Badge di sini hanya pengingat.
                 // ==============================================
-                Padding(
-                  padding: const EdgeInsets.all(15),
+                _buildMenuTile(
+                  path: 'assets/icons/riwayat.png',
 
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.confirmation_number,
+                  title: 'Riwayat Setor',
 
-                        color: Colors.white,
-                      ),
+                  subtitle: _unconfirmedSessions > 0
+                      ? (_unconfirmedSessions == 1
+                            ? '1 sesi menunggu konfirmasi'
+                            : '$_unconfirmedSessions sesi menunggu konfirmasi')
+                      : null,
 
-                      const SizedBox(width: 10),
+                  trailing: _openSessionBadge(),
 
-                      const Expanded(
-                        child: Text(
-                          'Voucher Digital',
+                  onTap: () {
+                    Navigator.push(
+                      context,
 
-                          maxLines: 1,
-
-                          overflow: TextOverflow.ellipsis,
-
-                          style: TextStyle(
-                            color: Colors.white,
-
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(width: 8),
-
-                      ElevatedButton(
-                        /*
-                         * Tampilan dan fungsi tombol Sekolah
-                         * dipertahankan seperti sebelumnya.
-                         *
-                         * Jika VoucherPage Sekolah sudah dibuat,
-                         * nanti dapat dihubungkan ke endpoint
-                         * getAvailableVouchers.
-                         */
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Fitur voucher belum tersedia di EcoCash Sekolah.',
-                              ),
-                            ),
-                          );
+                      MaterialPageRoute(
+                        builder: (BuildContext context) {
+                          return const RefundsScreen();
                         },
-
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white.withOpacity(0.30),
-
-                          foregroundColor: Colors.white,
-
-                          elevation: 0,
-
-                          minimumSize: const Size(0, 36),
-
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-
-                            vertical: 8,
-                          ),
-
-                          shape: const StadiumBorder(),
-                        ),
-
-                        child: const Text(
-                          'Pakai',
-
-                          style: TextStyle(color: Colors.white, fontSize: 12),
-                        ),
                       ),
-                    ],
-                  ),
+                    ).then((_) {
+                      _refreshData();
+                    });
+                  },
                 ),
 
+                _buildDivider(),
+
                 // ==============================================
-                // WHITE MENU
+                // PROFILE
                 // ==============================================
-                Container(
-                  width: double.infinity,
+                _buildMenuTile(
+                  path: 'assets/icons/plus.png',
 
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
+                  title: 'Profil',
 
-                    borderRadius: BorderRadius.all(Radius.circular(30)),
-                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
 
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-
-                    children: [
-                      // =========================================
-                      // NEAREST RETURN POINT
-                      // =========================================
-                      _buildMenuTile(
-                        path: 'assets/icons/lokasi.png',
-
-                        title: 'Cari titik pengembalian terdekat',
-
-                        onTap: () {
-                          Navigator.push(
-                            context,
-
-                            MaterialPageRoute(
-                              builder: (BuildContext context) {
-                                return const MapsPage();
-                              },
-                            ),
-                          ).then((_) {
-                            _refreshData();
-                          });
+                      MaterialPageRoute(
+                        builder: (BuildContext context) {
+                          return const ProfilePage();
                         },
                       ),
-
-                      _buildDivider(),
-
-                      // =========================================
-                      // MARKETPLACE
-                      // =========================================
-                      _buildMenuTile(
-                        path: 'assets/icons/panahb.png',
-
-                        title: 'Tukar Saldo untuk Barang',
-
-                        onTap: () {
-                          Navigator.push(
-                            context,
-
-                            MaterialPageRoute(
-                              builder: (BuildContext context) {
-                                return const EcomerPage();
-                              },
-                            ),
-                          ).then((_) {
-                            /*
-                               * Saldo bisa berubah setelah
-                               * melakukan pembelian.
-                               */
-                            _refreshData();
-                          });
-                        },
-                      ),
-
-                      _buildDivider(),
-
-                      // =========================================
-                      // CHARITY
-                      // =========================================
-                      _buildMenuTile(
-                        path: 'assets/icons/love.png',
-
-                        title: 'Bantuan & Donasi',
-
-                        onTap: () {
-                          Navigator.push(
-                            context,
-
-                            MaterialPageRoute(
-                              builder: (BuildContext context) {
-                                return const BantuanPage();
-                              },
-                            ),
-                          ).then((_) {
-                            /*
-                               * Saldo bisa berubah setelah
-                               * melakukan donasi.
-                               */
-                            _refreshData();
-                          });
-                        },
-                      ),
-
-                      _buildDivider(),
-
-                      // =========================================
-                      // OTHER / PROFILE
-                      // =========================================
-                      _buildMenuTile(
-                        path: 'assets/icons/plus.png',
-
-                        title: 'Profil',
-
-                        onTap: () {
-                          Navigator.push(
-                            context,
-
-                            MaterialPageRoute(
-                              builder: (BuildContext context) {
-                                return const ProfilePage();
-                              },
-                            ),
-                          ).then((_) {
-                            /*
-                               * Profile bisa berubah.
-                               */
-                            _refreshData();
-                          });
-                        },
-                      ),
-                    ],
-                  ),
+                    ).then((_) {
+                      /*
+                       * Profile bisa berubah.
+                       */
+                      _refreshData();
+                    });
+                  },
                 ),
               ],
             ),
@@ -1234,6 +1107,8 @@ class _HomeScreenState extends State<HomeScreen> {
     required String path,
     required String title,
     VoidCallback? onTap,
+    String? subtitle,
+    Widget? trailing,
   }) {
     return Material(
       color: Colors.transparent,
@@ -1257,10 +1132,33 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        trailing: const Icon(
-          Icons.chevron_right,
-          size: 18,
-          color: Color(0xFF5A6B7D),
+        subtitle: subtitle == null
+            ? null
+            : Text(
+                subtitle,
+
+                maxLines: 1,
+
+                overflow: TextOverflow.ellipsis,
+
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF7A8A9A),
+                ),
+              ),
+
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+
+          children: [
+            if (trailing != null) ...[trailing, const SizedBox(width: 6)],
+
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Color(0xFF5A6B7D),
+            ),
+          ],
         ),
 
         onTap: onTap,
