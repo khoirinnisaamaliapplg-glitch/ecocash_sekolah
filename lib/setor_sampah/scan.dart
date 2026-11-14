@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:ecocash_sekolah/core/api_client.dart';
+import 'package:ecocash_sekolah/core/session_socket.dart';
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:ecocash_sekolah/setor_sampah/konfirmasi.dart';
 import 'package:ecocash_sekolah/app_footer.dart';
@@ -26,6 +26,11 @@ class _ScanPageState extends State<ScanPage> {
   int _secondsWaiting = 0;
   final int _maxWaitSeconds = 45; // Menampilkan bantuan setelah 45 detik
 
+  /// Kanal live `/sessions`: `session:started` datang lebih cepat daripada
+  /// polling, jadi layer ini yang utama dan polling hanya fallback.
+  SessionSocket? _sessionSocket;
+  bool _isSocketConnected = false;
+
   @override
   void initState() {
     super.initState();
@@ -35,7 +40,48 @@ class _ScanPageState extends State<ScanPage> {
   @override
   void dispose() {
     _pollingTimer?.cancel();
+    _sessionSocket?.disconnect();
     super.dispose();
+  }
+
+  // ============================================================
+  // LIVE CHANNEL (/sessions)
+  // ============================================================
+
+  void _connectSocket() {
+    _sessionSocket = SessionSocket(
+      onStarted: _handleSessionStarted,
+      onConnectionChanged: (bool connected) {
+        _isSocketConnected = connected;
+
+        /*
+         * Setelah connect/reconnect ambil satu snapshot: bisa saja mesin
+         * sudah membuka sesi saat socket sedang mati.
+         */
+        if (connected) {
+          _checkForOpenSession();
+        } else {
+          // Socket tidak bisa dipakai (misal proxy tanpa upgrade header):
+          // kembali ke polling supaya QR tetap berfungsi.
+          _startSessionPolling();
+        }
+      },
+    );
+
+    _sessionSocket!.connect();
+  }
+
+  /// `session:started` — mesin baru saja memindai QR pengguna.
+  void _handleSessionStarted(Map<String, dynamic> event) {
+    if (!mounted || _hasNavigated) return;
+
+    final int? sessionId = int.tryParse('${event['sessionId'] ?? ''}');
+
+    if (sessionId == null) return;
+
+    debugPrint('SOCKET session:started -> $sessionId');
+
+    _navigateToSessionDetail(sessionId);
   }
 
   Future<void> _initializePage() async {
@@ -47,7 +93,29 @@ class _ScanPageState extends State<ScanPage> {
       });
       return;
     }
+
+    // Dengarkan sesi baru sejak QR ditampilkan.
+    _connectSocket();
+
     await _fetchQrCredential();
+  }
+
+  /// Menerjemahkan error API menjadi pesan yang bisa dibaca pengguna.
+  String _describeApiError(Object error) {
+    if (error is ApiException) {
+      if (error.isUnauthorized) {
+        return 'Sesi login telah berakhir. Silakan login kembali.';
+      }
+
+      if (error.isEmailNotVerified) {
+        return 'Email Anda belum diverifikasi. '
+            'Harap verifikasi email Anda terlebih dahulu.';
+      }
+
+      return error.message;
+    }
+
+    return 'Gagal terhubung ke server. Periksa koneksi internet Anda.';
   }
 
   // Ambil Kredensial QR Permanen Pengguna (GET /users/me/credential-qr)
@@ -59,54 +127,9 @@ class _ScanPageState extends State<ScanPage> {
     });
 
     try {
-      final response = await http.get(
-        Uri.parse(ApiConfig.getMyCredentialQr),
-        headers: ApiConfig.headers,
+      final Map<String, dynamic> data = await ApiClient.getMap(
+        ApiConfig.getMyCredentialQr,
       );
-
-      if (response.statusCode == 401) {
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'Sesi login telah berakhir. Silakan login kembali.';
-        });
-        return;
-      }
-
-      if (response.statusCode == 403) {
-        dynamic body;
-        try { body = jsonDecode(response.body); } catch (_) { body = null; }
-        final code = body is Map ? body['code']?.toString() ?? '' : '';
-        if (code == 'EMAIL_NOT_VERIFIED' || response.body.contains('EMAIL_NOT_VERIFIED')) {
-          if (!mounted) return;
-          setState(() {
-            _isLoading = false;
-            _errorMessage = 'Email Anda belum diverifikasi. Harap verifikasi email Anda terlebih dahulu.';
-          });
-          return;
-        }
-      }
-
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'Gagal memuat QR (${response.statusCode}). Coba lagi.';
-        });
-        return;
-      }
-
-      final body = jsonDecode(response.body);
-      final data = body['data'];
-
-      if (data == null || data is! Map) {
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'Format kredensial QR tidak valid.';
-        });
-        return;
-      }
 
       final String? identifier = data['identifier']?.toString().trim();
       if (identifier == null || identifier.isEmpty) {
@@ -132,7 +155,7 @@ class _ScanPageState extends State<ScanPage> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Gagal terhubung ke server. Periksa koneksi internet Anda.';
+        _errorMessage = _describeApiError(e);
       });
     }
   }
@@ -141,42 +164,40 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _regenerateQrCredential() async {
     setState(() => _isRegenerating = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConfig.regenerateMyCredentialQr),
-        headers: ApiConfig.headers,
+      final dynamic payload = await ApiClient.post(
+        ApiConfig.regenerateMyCredentialQr,
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final dynamic body = jsonDecode(response.body);
-        final dynamic data = body is Map ? body['data'] : null;
-        final newIdentifier = data is Map ? data['identifier']?.toString().trim() : null;
+      final String? newIdentifier = payload is Map
+          ? payload['identifier']?.toString().trim()
+          : null;
 
-        if (newIdentifier != null && newIdentifier.isNotEmpty && mounted) {
-          setState(() {
-            _qrIdentifier = newIdentifier;
-            _secondsWaiting = 0;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Kode QR berhasil diperbarui!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Gagal memperbarui QR (${response.statusCode})'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+      if (newIdentifier != null && newIdentifier.isNotEmpty && mounted) {
+        setState(() {
+          _qrIdentifier = newIdentifier;
+          _secondsWaiting = 0;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kode QR berhasil diperbarui!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gagal memperbarui QR. Coba lagi.'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Koneksi bermasalah: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Gagal memperbarui QR: ${_describeApiError(e)}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -184,11 +205,13 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
-  // Polling Sesi Berjalan (GET /machine-sessions/current tiap 2 detik)
+  // FALLBACK: polling GET /machine-sessions/current tiap 2 detik.
+  // Hanya berjalan saat socket tidak tersambung.
   void _startSessionPolling() {
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted || _hasNavigated) return;
+      if (_isSocketConnected) return;
       _checkForOpenSession();
     });
   }
@@ -202,24 +225,21 @@ class _ScanPageState extends State<ScanPage> {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse(ApiConfig.getCurrentSession),
-        headers: ApiConfig.headers,
-      );
+      // ApiClient mengembalikan `data` (null kalau belum ada sesi terbuka).
+      final dynamic payload = await ApiClient.get(ApiConfig.getCurrentSession);
 
-      if (response.statusCode == 200) {
-        final dynamic body = jsonDecode(response.body);
-        final dynamic sessionData = body is Map ? body['data'] : null;
+      // Jika mesin sudah scan QR dan membuka sesi
+      // (status ACTIVE atau WAITING_CONFIRMATION).
+      if (payload is Map && payload['id'] != null) {
+        final int? sessionId = int.tryParse(payload['id'].toString());
+        final String status = (payload['status'] ?? '')
+            .toString()
+            .toUpperCase();
 
-        // Jika mesin sudah scan QR dan membuka sesi (status ACTIVE atau WAITING_CONFIRMATION)
-        if (sessionData != null && sessionData is Map && sessionData['id'] != null) {
-          final int? sessionId = int.tryParse(sessionData['id'].toString());
-          final String status = (sessionData['status'] ?? '').toString().toUpperCase();
-
-          if (sessionId != null && (status == 'ACTIVE' || status == 'WAITING_CONFIRMATION')) {
-            _navigateToSessionDetail(sessionId);
-            return;
-          }
+        if (sessionId != null &&
+            (status == 'ACTIVE' || status == 'WAITING_CONFIRMATION')) {
+          _navigateToSessionDetail(sessionId);
+          return;
         }
       }
 
@@ -242,6 +262,8 @@ class _ScanPageState extends State<ScanPage> {
     if (!mounted || _hasNavigated) return;
     _hasNavigated = true;
     _pollingTimer?.cancel();
+    // Layar berikutnya membuka kanal live-nya sendiri.
+    _sessionSocket?.disconnect();
 
     Navigator.pushReplacement(
       context,
@@ -407,12 +429,40 @@ class _ScanPageState extends State<ScanPage> {
                     ],
                   ),
                 )
+              /*
+               * Kartu tips, bukan gambar: `assets/banner2.jpeg` tidak pernah ada
+               * di repo (dan tidak terdaftar di pubspec), jadi Image.asset di
+               * sini hanya akan menghasilkan ruang kosong.
+               */
               else
-                Image.asset(
-                  'assets/banner2.jpeg',
-                  height: 140,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.qr_code_2_rounded,
+                        color: Colors.green,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Tunjukkan QR ini ke kamera mesin. Layar akan '
+                          'memperbarui otomatis setelah mesin memindainya.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.green.shade900,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               const SizedBox(height: 20),
 

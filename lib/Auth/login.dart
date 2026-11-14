@@ -1,7 +1,7 @@
 import 'dart:convert';
 
+import 'package:ecocash_sekolah/Auth/forgot_password.dart';
 import 'package:ecocash_sekolah/home.dart';
-import 'package:ecocash_sekolah/Auth/registrasi.dart';
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:ecocash_sekolah/app_footer.dart';
 
@@ -93,19 +93,30 @@ class _LoginPageState extends State<LoginPage> {
        * Login cukup menggunakan Content-Type dan Accept.
        */
 
-      final response = await http.post(
-        Uri.parse(ApiConfig.login),
-        headers: const {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({'identifier': identifier, 'password': password}),
-      );
+      final response = await http
+          .post(
+            Uri.parse(ApiConfig.login),
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'identifier': identifier,
+              'password': password,
+              // Identifies this client: the API only admits members of a SCHOOL
+              // organization when `app` is SCHOOL, and answers
+              // 403 SCHOOL_MEMBER_REQUIRED otherwise.
+              'app': 'SCHOOL',
+            }),
+          )
+          // Without a timeout a stopped/unreachable API leaves the login button
+          // spinning forever; this makes the existing catch block report it.
+          .timeout(const Duration(seconds: 15));
 
-      debugPrint('');
+      // Only the status is logged. The response body contains the JWT, and
+      // debugPrint output ends up in logcat / the IDE console, where the token
+      // would be readable by anyone with access to the device's logs.
       debugPrint('LOGIN STATUS : ${response.statusCode}');
-      debugPrint('LOGIN BODY   : ${response.body}');
-      debugPrint('');
 
       // ========================================================
       // PARSE RESPONSE
@@ -207,6 +218,13 @@ class _LoginPageState extends State<LoginPage> {
          */
 
         ApiConfig.setToken(token);
+
+        /*
+         * Respons login adalah satu-satunya sumber data organisasi (sekolah)
+         * pengguna; simpan untuk profil. `clearToken()` membersihkannya lagi,
+         * termasuk saat token kedaluwarsa atau ditolak server.
+         */
+        ApiConfig.setCurrentUser(data['user']);
 
         debugPrint('');
         debugPrint('========== TOKEN LOGIN SEKOLAH ==========');
@@ -494,28 +512,15 @@ class _LoginPageState extends State<LoginPage> {
       );
   }
 
-// ============================================================
-  // REGISTER
-  // ============================================================
-
-  void _openRegister() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const RegisterPage()),
-    );
-  }
-
   // ============================================================
   // FORGOT PASSWORD
   // ============================================================
 
   void _openForgotPassword() {
-    // Login EcoCash Sekolah pada source pertama belum memiliki
-    // halaman ForgotPasswordPage. Supaya file tetap bisa langsung
-    // dipakai tanpa menambah import/file baru, aksi ini dibuat aman.
-    _showSnackBar(
-      'Fitur lupa password belum tersedia.',
-      Colors.orange,
+    // `POST /auth/forgot-password` mengirim tautan reset ke email pengguna.
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
     );
   }
 
@@ -960,37 +965,12 @@ class _LoginPageState extends State<LoginPage> {
 
                       _buildSocialLogin(screenWidth),
 
+                      // No self-registration here on purpose: school member
+                      // accounts are created by the school organization admin
+                      // through the admin panel, not from this app.
                       SizedBox(
                         height: compactLayout ? 24 : 38,
                       ),
-
-                      // =========================================
-                      // REGISTER
-                      // =========================================
-                      Center(
-                        child: Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: 4,
-                          children: [
-                            const Text(
-                              'Belum punya akun?',
-                            ),
-                            GestureDetector(
-                              onTap: _openRegister,
-                              child: const Text(
-                                'Daftar Sekarang',
-                                style: TextStyle(
-                                  color: Colors.blue,
-                                  fontWeight:
-                                      FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
 
                       // =========================================
                       // FOOTER ECOCASH SEKOLAH

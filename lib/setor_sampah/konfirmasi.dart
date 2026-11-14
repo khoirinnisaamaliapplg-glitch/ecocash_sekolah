@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+import 'package:ecocash_sekolah/core/api_client.dart';
+import 'package:ecocash_sekolah/core/session_socket.dart';
 import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:ecocash_sekolah/setor_sampah/transaksi.dart';
 import 'package:ecocash_sekolah/app_footer.dart';
@@ -29,6 +29,19 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
   bool _isPolling = false;
   bool _isTimedOut = false;
 
+  /// Kanal live `/sessions`. Polling hanya dipakai sebagai fallback.
+  SessionSocket? _sessionSocket;
+  bool _isSocketConnected = false;
+
+  /// Layar sudah menutup diri karena sesi dibatalkan (mencegah pop ganda).
+  bool _sessionClosed = false;
+
+  /// Struk sudah dibuka (mencegah dua navigasi dari dua kanal pembayaran).
+  bool _receiptShown = false;
+
+  /// Sesi sudah dibayar, apa pun kanalnya. Dipakai untuk teks tombol.
+  bool _kioskSettled = false;
+
   List<Map<String, dynamic>> _wasteItems = [];
   double _currentTotalWeight = 0.0;
   double _currentTotalPrice = 0.0;
@@ -45,74 +58,330 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       _applySessionData(widget.initialSessionData!);
     }
     _startPolling();
+    _connectSocket();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _sessionSocket?.disconnect();
     super.dispose();
   }
 
   double _number(dynamic value) =>
       double.tryParse(value?.toString() ?? '') ?? 0.0;
 
-  // Data awal dari scan dan pembaruan status dari server.
+  /// Satu baris item dalam bentuk yang dipakai layar ini (angka = String),
+  /// baik dari snapshot HTTP maupun dari event `session:item`.
+  Map<String, dynamic> _toDisplayItem(Map<String, dynamic> rawItem) {
+    final dynamic waste = rawItem['wasteType'];
+
+    final String typeName = waste is Map
+        ? (waste['name'] ?? 'Material').toString()
+        : (waste ?? 'Material').toString();
+
+    return {
+      'id': int.tryParse('${rawItem['id'] ?? ''}'),
+      'wasteType': typeName,
+      'weight': (rawItem['weight'] ?? 0).toString(),
+      'totalPrice': (rawItem['totalPrice'] ?? 0).toString(),
+      'pricePerKg': (rawItem['pricePerKg'] ?? 0).toString(),
+    };
+  }
+
+  /// Snapshot dari server: data awal, setelah reconnect, dan fallback polling.
   void _applySessionData(Map<String, dynamic> data) {
-    final status = (data['status'] ?? '').toString().trim().toUpperCase();
-    final rawItems = data['items'] is List
+    final String status = (data['status'] ?? '').toString().trim().toUpperCase();
+
+    final List<dynamic> rawItems = data['items'] is List
         ? data['items'] as List
         : <dynamic>[];
-    final summary = data['summary'] is Map
-        ? data['summary'] as Map
-        : <dynamic, dynamic>{};
-    final machine = data['machine'];
 
-    final items = <Map<String, dynamic>>[];
-    for (final rawItem in rawItems) {
-      if (rawItem is! Map) continue;
-      final waste = rawItem['wasteType'];
-      final typeName = waste is Map
-          ? (waste['name'] ?? 'Material').toString()
-          : (waste ?? 'Material').toString();
-      items.add({
-        'wasteType': typeName,
-        'weight': (rawItem['weight'] ?? 0).toString(),
-        'totalPrice': (rawItem['totalPrice'] ?? 0).toString(),
-        'pricePerKg': (rawItem['pricePerKg'] ?? 0).toString(),
-      });
+    final Map<String, dynamic> summary = data['summary'] is Map
+        ? Map<String, dynamic>.from(data['summary'] as Map)
+        : <String, dynamic>{};
+
+    final dynamic machine = data['machine'];
+
+    final List<Map<String, dynamic>> items = [];
+
+    for (final dynamic rawItem in rawItems) {
+      if (rawItem is Map) {
+        items.add(_toDisplayItem(Map<String, dynamic>.from(rawItem)));
+      }
     }
 
     if (!mounted) return;
-    final wasReady = _isReadyToConfirm;
+
+    /*
+     * Gabungkan, jangan timpa: event `session:item` bisa tiba lebih dulu
+     * daripada response snapshot (snapshot dibaca sedikit sebelum item itu
+     * di-commit), dan item tersebut tidak boleh hilang dari layar.
+     */
+    final List<Map<String, dynamic>> merged = List<Map<String, dynamic>>.from(
+      items,
+    );
+
+    for (final Map<String, dynamic> existing in _wasteItems) {
+      final Object? id = existing['id'];
+
+      if (id != null && !merged.any((item) => item['id'] == id)) {
+        merged.add(existing);
+      }
+    }
+
     setState(() {
-      _wasteItems = items;
-      _currentTotalWeight = _number(summary['currentWeight']);
-      _currentTotalPrice = _number(summary['totalPrice']);
+      _wasteItems = merged;
+
+      // Total selalu sama dengan jumlah baris yang terlihat.
+      if (merged.isNotEmpty) {
+        double weight = 0;
+
+        double price = 0;
+
+        for (final Map<String, dynamic> item in merged) {
+          weight += _number(item['weight']);
+
+          price += _number(item['totalPrice']);
+        }
+
+        _currentTotalWeight = weight;
+
+        _currentTotalPrice = price;
+      } else {
+        _currentTotalWeight = _number(summary['currentWeight']);
+
+        _currentTotalPrice = _number(summary['totalPrice']);
+      }
+
       if (machine is Map) {
         _machineName = machine['name']?.toString();
+
         _machineCode = machine['machineCode']?.toString();
       }
+    });
+
+    // Total sudah dihitung di atas, jadi summary tidak dipakai lagi.
+    _applyStatus(status, <String, dynamic>{});
+  }
+
+  /// Mengubah status sesi menjadi teks di layar. [summary] boleh kosong
+  /// (event `session:state` saat konfirmasi tidak membawa summary).
+  ///
+  /// [earned] dan [balance] hanya ada pada event `session:state` yang dikirim
+  /// setelah pembayaran; keduanya dipakai untuk struk bila mesin yang
+  /// mencairkan sesi lebih dulu.
+  void _applyStatus(
+    String status,
+    Map<String, dynamic> summary, {
+    dynamic earned,
+    dynamic balance,
+  }) {
+    if (!mounted) return;
+
+    final bool wasReady = _isReadyToConfirm;
+
+    setState(() {
+      if (summary['currentWeight'] != null) {
+        _currentTotalWeight = _number(summary['currentWeight']);
+      }
+
+      if (summary['totalPrice'] != null) {
+        _currentTotalPrice = _number(summary['totalPrice']);
+      }
+
       _isReadyToConfirm = status == 'WAITING_CONFIRMATION';
+
       if (_isReadyToConfirm) {
         _statusMesin =
             'Mesin selesai menimbang! Silakan konfirmasi untuk menerima saldo.';
       } else if (status == 'ACTIVE') {
-        _statusMesin = items.isEmpty
+        _statusMesin = _wasteItems.isEmpty
             ? 'Pintu mesin terbuka. Masukkan botol/sampah Anda...'
             : 'Sedang menimbang muatan sampah...';
       } else if (status == 'COMPLETED') {
-        _statusMesin = 'Sesi telah selesai dikonfirmasi.';
-      } else if (status == 'CANCELLED' || status == 'FAILED') {
+        _kioskSettled = true;
+        _statusMesin =
+            'Sesi selesai — saldo sudah ditambahkan ke dompet Anda.';
+      } else if (status == 'CANCELLED' ||
+          status == 'FAILED' ||
+          status == 'EXPIRED') {
         _statusMesin = 'Sesi setoran dibatalkan atau gagal.';
       }
     });
-    if (!wasReady && _isReadyToConfirm) HapticFeedback.heavyImpact();
-    if (['COMPLETED', 'CANCELLED', 'FAILED'].contains(status)) {
+
+    if (!wasReady && _isReadyToConfirm) {
+      HapticFeedback.heavyImpact();
+    }
+
+    if (['COMPLETED', 'CANCELLED', 'FAILED', 'EXPIRED'].contains(status)) {
       _timer?.cancel();
+    }
+
+    /*
+     * COMPLETED datang dari dua arah: tombol Konfirmasi di HP ini, atau mesin
+     * yang mencairkan lebih dulu (satu tombol di layar mesin). Keduanya
+     * berakhir di struk yang sama - `_openReceipt` mengabaikan panggilan kedua,
+     * jadi pengguna tidak pernah melihat layar "menunggu mesin" yang menggantung.
+     */
+    if (status == 'COMPLETED') {
+      _openReceipt(earned: earned, balance: balance);
+      return;
+    }
+
+    if (['CANCELLED', 'FAILED', 'EXPIRED'].contains(status)) {
+      _handleSessionClosed(status);
     }
   }
 
+  /// Sesi ditutup oleh mesin (atau pembersihan otomatis di server).
+  ///
+  /// `CANCELLED` berarti **tidak ada setoran sama sekali**: `/complete` memakai
+  /// `currentWeight > 0 ? WAITING_CONFIRMATION : CANCELLED`, dan pembersihan
+  /// sesi memakai aturan yang sama. Jadi kalau tidak ada sampah yang masuk,
+  /// layar ini tidak ada gunanya lagi - tutup sendiri dan beri tahu pengguna.
+  void _handleSessionClosed(String status) {
+    if (_sessionClosed || !mounted) return;
+
+    // Struk sudah ditangani oleh _handleConfirm.
+    if (status == 'COMPLETED') return;
+
+    // Ada catatan setoran: biarkan pengguna melihatnya, jangan ditutup.
+    if (_wasteItems.isNotEmpty) return;
+
+    _sessionClosed = true;
+
+    _sessionSocket?.disconnect();
+
+    // Jeda singkat supaya perubahan status di layar sempat terbaca.
+    Future<void>.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+
+      /*
+       * Lookup dilakukan di dalam callback: kalau sesi sudah CANCELLED pada
+       * snapshot awal, method ini ikut berjalan saat initState, dan
+       * ScaffoldMessenger.of() belum boleh dipanggil di sana.
+       */
+      final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+
+      final NavigatorState navigator = Navigator.of(context);
+
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sesi dibatalkan karena tidak ada sampah yang masuk. '
+              'Silakan pindai QR di mesin untuk mencoba lagi.',
+            ),
+          ),
+        );
+    });
+  }
+
+  // ============================================================
+  // LIVE CHANNEL (/sessions)
+  // ============================================================
+
+  void _connectSocket() {
+    _sessionSocket = SessionSocket(
+      onItem: _handleLiveItem,
+      onState: _handleLiveState,
+      onConnectionChanged: (bool connected) {
+        if (mounted) {
+          setState(() => _isSocketConnected = connected);
+        } else {
+          _isSocketConnected = connected;
+        }
+
+        /*
+         * Event yang dipancarkan saat socket mati tidak dikirim ulang,
+         * jadi setiap connect/reconnect diikuti satu snapshot HTTP.
+         */
+        if (connected) {
+          _refreshSession();
+        }
+      },
+    );
+
+    _sessionSocket!.connect();
+  }
+
+  /// `session:item` — satu setoran baru dari mesin, tampil tanpa polling.
+  void _handleLiveItem(Map<String, dynamic> event) {
+    if (!mounted) return;
+
+    final int? sessionId = int.tryParse('${event['sessionId'] ?? ''}');
+
+    if (sessionId != null && sessionId != widget.sessionId) return;
+
+    if (event['item'] is! Map) return;
+
+    final Map<String, dynamic> item = _toDisplayItem(
+      Map<String, dynamic>.from(event['item'] as Map),
+    );
+
+    final List<Map<String, dynamic>> items = List<Map<String, dynamic>>.from(
+      _wasteItems,
+    );
+
+    // Idempoten: event yang sama tidak boleh menambah baris dua kali.
+    final Object? itemId = item['id'];
+
+    if (itemId != null && items.any((existing) => existing['id'] == itemId)) {
+      return;
+    }
+
+    items.add(item);
+
+    setState(() {
+      _wasteItems = items;
+
+      _currentTotalWeight += _number(item['weight']);
+
+      _currentTotalPrice += _number(item['totalPrice']);
+
+      _statusMesin = 'Sedang menimbang muatan sampah...';
+    });
+
+    HapticFeedback.mediumImpact();
+  }
+
+  /// `session:state` — WAITING_CONFIRMATION / COMPLETED / CANCELLED.
+  void _handleLiveState(Map<String, dynamic> event) {
+    if (!mounted) return;
+
+    final int? sessionId = int.tryParse('${event['sessionId'] ?? ''}');
+
+    if (sessionId != null && sessionId != widget.sessionId) return;
+
+    final String status = (event['status'] ?? '')
+        .toString()
+        .trim()
+        .toUpperCase();
+
+    if (status.isEmpty) return;
+
+    final Map<String, dynamic> summary = event['summary'] is Map
+        ? Map<String, dynamic>.from(event['summary'] as Map)
+        : <String, dynamic>{};
+
+    _applyStatus(
+      status,
+      summary,
+      earned: event['earned'],
+      balance: event['balance'],
+    );
+  }
+
   // Poll sesi ini saja; /current bisa menunjuk sesi lain atau data kosong.
+  //
+  // Ini hanya fallback: selama socket tersambung, item dan status datang
+  // lewat push sehingga tidak perlu ada request tiap 2 detik.
   void _startPolling() {
     _timer?.cancel();
     _refreshSession();
@@ -129,6 +398,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
         }
         return;
       }
+      if (_isSocketConnected) return;
       _refreshSession();
     });
   }
@@ -138,29 +408,15 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     _isPolling = true;
     try {
       // Ambil detail menggunakan ID sesi hasil scan supaya tidak tertukar.
-      final response = await http
-          .get(
-            Uri.parse(ApiConfig.getSessionDetail(widget.sessionId.toString())),
-            headers: ApiConfig.headers,
-          )
-          .timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) {
-        debugPrint('DETAIL SESSION STATUS: ${response.statusCode}');
-        if (response.statusCode == 401 && mounted) {
-          setState(
-            () => _statusMesin = 'Sesi login berakhir. Silakan login kembali.',
-          );
-          _timer?.cancel();
-        }
-        return;
-      }
-      final decoded = jsonDecode(response.body);
-      if (decoded is! Map) return;
-      final dynamic candidate = decoded['data'] is Map
-          ? decoded['data']
-          : decoded;
-      if (candidate is! Map) return;
-      final data = Map<String, dynamic>.from(candidate);
+      final dynamic payload = await ApiClient.get(
+        ApiConfig.getSessionDetail(widget.sessionId.toString()),
+        timeout: const Duration(seconds: 12),
+      );
+
+      if (payload is! Map) return;
+
+      final data = Map<String, dynamic>.from(payload);
+
       final responseId = int.tryParse(
         (data['id'] ?? data['sessionId'] ?? '').toString(),
       );
@@ -168,6 +424,13 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       _applySessionData(data);
     } catch (e) {
       debugPrint('Polling detail sesi gagal: $e');
+
+      if (e is ApiException && e.isUnauthorized && mounted) {
+        setState(
+          () => _statusMesin = 'Sesi login berakhir. Silakan login kembali.',
+        );
+        _timer?.cancel();
+      }
     } finally {
       _isPolling = false;
     }
@@ -179,66 +442,113 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConfig.confirmSession(widget.sessionId.toString())),
-        headers: ApiConfig.headers,
+      final dynamic payload = await ApiClient.post(
+        ApiConfig.confirmSession(widget.sessionId.toString()),
       );
 
-      final decoded = jsonDecode(response.body);
-      final body = decoded is Map ? decoded : <String, dynamic>{};
+      _timer?.cancel();
 
-      if ((response.statusCode == 200 || response.statusCode == 201) &&
-          (body['success'] == true || body['data'] != null)) {
-        _timer?.cancel();
-        final confirmData = body['data'] is Map
-            ? body['data'] as Map
-            : <dynamic, dynamic>{};
+      // ApiClient sudah melempar ApiException untuk status non-2xx,
+      // jadi blok ini hanya berjalan saat konfirmasi berhasil.
+      final Map<String, dynamic> confirmData = payload is Map
+          ? Map<String, dynamic>.from(payload)
+          : <String, dynamic>{};
 
-        // Paket data bukti transaksi untuk TransaksiBerhasilScreen
-        final Map<String, dynamic> successPayload = {
-          'sessionId': widget.sessionId.toString(),
-          'earned':
-              confirmData['earned']?.toString() ??
-              _currentTotalPrice.toStringAsFixed(0),
-          'balance': confirmData['balance']?.toString() ?? '0',
-          'totalWeight': _currentTotalWeight.toStringAsFixed(2),
-          'machineName': _machineName ?? 'Smart Container EcoCash',
-          'machineCode': _machineCode ?? '',
-          'items': _wasteItems,
-          'totalAmount':
-              confirmData['earned']?.toString() ??
-              _currentTotalPrice.toStringAsFixed(0),
-          'wasteTransactions': _wasteItems
-              .map(
-                (item) => {
-                  'wasteType': {'name': item['wasteType']},
-                  'weight': item['weight'],
-                  'amount': item['totalPrice'],
-                },
-              )
-              .toList(),
-        };
-
-        if (!mounted) return;
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(
-            builder: (context) => TransaksiBerhasilScreen(
-              detailTransaksi: {'data': successPayload},
-            ),
-          ),
-          (route) => route.isFirst,
-        );
-      } else {
-        final String errMsg =
-            (body['message'] ?? 'Gagal melakukan konfirmasi sesi.').toString();
-        _showSnackBar(errMsg, Colors.red);
-      }
+      _openReceipt(
+        earned: confirmData['earned'],
+        balance: confirmData['balance'],
+      );
     } catch (e) {
-      _showSnackBar("Koneksi bermasalah: $e", Colors.red);
+      /*
+       * Balapan: mesin mencairkan sesi tepat saat tombol di HP ditekan. Tombol
+       * ini hanya pintu cadangan, jadi hasilnya tetap struk - bukan error.
+       */
+      if (_isAlreadySettled(e)) {
+        _openReceipt(earned: _currentTotalPrice);
+        return;
+      }
+
+      _showSnackBar(
+        e is ApiException ? e.message : 'Koneksi bermasalah: $e',
+        Colors.red,
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Sesi sudah dibayar di kanal lain (mesin) atau sudah dibatalkan. Keduanya
+  /// bukan kesalahan pengguna, jadi layar ini tidak perlu menampilkan error.
+  bool _isAlreadySettled(Object error) {
+    if (error is! ApiException) return false;
+
+    if (error.statusCode == 409 || error.code == 'SESSION_NOT_CONFIRMABLE') {
+      return true;
+    }
+
+    final String message = error.message.toLowerCase();
+
+    return message.contains('already settled') ||
+        message.contains('not waiting for confirmation');
+  }
+
+  /// Struk akhir, dipakai kedua kanal pembayaran:
+  ///
+  ///   - pengguna menekan "Konfirmasi & Terima Saldo" (POST /confirm), atau
+  ///   - mesin yang mencairkan sesi lebih dulu lewat satu tombol di layarnya,
+  ///     sehingga HP tidak perlu melakukan apa pun (`session:state` COMPLETED).
+  ///
+  /// [balance] boleh null: snapshot HTTP tidak membawa saldo dompet, dan struk
+  /// hanya menampilkannya bila nilainya diketahui.
+  void _openReceipt({dynamic earned, dynamic balance}) {
+    if (_receiptShown || !mounted) return;
+
+    _receiptShown = true;
+    _timer?.cancel();
+    _sessionSocket?.disconnect();
+
+    final String earnedText = (earned ?? _currentTotalPrice).toString();
+
+    final Map<String, dynamic> receipt = {
+      'sessionId': widget.sessionId.toString(),
+      'earned': earnedText,
+      'totalAmount': earnedText,
+      'totalWeight': _currentTotalWeight.toStringAsFixed(2),
+      'machineName': _machineName ?? 'Smart Container EcoCash',
+      'machineCode': _machineCode ?? '',
+      'items': _wasteItems,
+      'wasteTransactions': _wasteItems
+          .map(
+            (item) => {
+              'wasteType': {'name': item['wasteType']},
+              'weight': item['weight'],
+              'amount': item['totalPrice'],
+            },
+          )
+          .toList(),
+    };
+
+    if (balance != null) {
+      receipt['balance'] = balance.toString();
+    }
+
+    /*
+     * Jeda singkat supaya status "selesai" di layar setor sempat terbaca, dan
+     * supaya navigasi tidak pernah terjadi di tengah initState.
+     */
+    Future<void>.delayed(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TransaksiBerhasilScreen(
+            detailTransaksi: {'data': receipt},
+          ),
+        ),
+        (route) => route.isFirst,
+      );
+    });
   }
 
   void _showSnackBar(String msg, Color color) {
@@ -266,6 +576,31 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
             ),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            // Penanda kanal live: "Live" = push dari socket, "Sync" = polling.
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _isSocketConnected ? Icons.bolt : Icons.sync,
+                    size: 16,
+                    color: Colors.white70,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _isSocketConnected ? 'Live' : 'Sync',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
@@ -524,6 +859,8 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                 : Text(
                     _isReadyToConfirm
                         ? "Konfirmasi & Terima Saldo"
+                        : _kioskSettled
+                        ? "Saldo sudah diterima ✓"
                         : "Menunggu Mesin Selesai...",
                     style: const TextStyle(
                       color: Colors.white,

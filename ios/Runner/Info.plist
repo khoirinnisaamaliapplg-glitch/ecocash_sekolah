@@ -41,6 +41,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>EcoCash Sekolah memerlukan akses galeri untuk memilih foto profil Anda.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>EcoCash Sekolah memerlukan akses kamera untuk memotret foto profil Anda.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

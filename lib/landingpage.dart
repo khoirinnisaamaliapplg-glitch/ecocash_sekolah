@@ -1,27 +1,10 @@
 import 'package:ecocash_sekolah/Auth/login.dart';
 import 'package:flutter/material.dart';
 
-void main() {
-  runApp(const EcoCashKidsApp());
-}
-
-class EcoCashKidsApp extends StatelessWidget {
-  const EcoCashKidsApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'EcoCash Kids - Splash',
-      theme: ThemeData(
-        primaryColor: const Color(0xFF54D2F4),
-        scaffoldBackgroundColor: Colors.white,
-        useMaterial3: true,
-      ),
-      home: const SplashLandingPage(),
-    );
-  }
-}
+/// Splash screen only. The application entry point lives in `main.dart`; the
+/// former `main()` + `EcoCashKidsApp` here duplicated the root `MaterialApp`
+/// (with a different theme) and made it ambiguous which widget `flutter run`
+/// would boot.
 
 class SplashLandingPage extends StatefulWidget {
   const SplashLandingPage({super.key});

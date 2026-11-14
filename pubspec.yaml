@@ -9,47 +9,54 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Imported directly by lib/ (every screen), so it must be declared here:
+  # it used to resolve only as a transitive dependency, which means a lockfile
+  # change could silently break the build.
+  http: ^1.6.0
+  # Live deposit feed: the API pushes session:started / session:item /
+  # session:state on the /sessions namespace (see
+  # docs/user-deposit-waste-quickstart.md).
+  socket_io_client: ^3.0.2
   mobile_scanner: ^7.0.0
   jwt_decoder: ^2.0.1
   qr_flutter: ^4.1.0
   url_launcher: ^6.3.2
+  # Used by lib/ (refund, saldo, transfer, landing page), so they belong in
+  # dependencies rather than dev_dependencies.
+  intl: ^0.19.0
+  google_fonts: ^6.3.3
+  image_picker: ^1.2.4
+  share_plus: ^13.3.1
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  intl: ^0.19.0          
-  google_fonts: ^6.2.1
   cupertino_icons: ^1.0.8
   flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
+  # Hanya aset yang benar-benar dipakai `lib/` (dicek dengan grep). Deklarasi
+  # yang tersisa dari layar lama sudah dibuang supaya APK tidak membawa file
+  # mati - mis. bg1/bg6/bg7 (hanya dipakai tabungan/riwayat), ijo/biru/ungu
+  # (kartu tabungan), dan icons/recycle.png.
   assets:
   - assets/google.png
   - assets/facebook.png
-  - assets/bg1.png
   - assets/bg2.png
   - assets/bg3.png
   - assets/bg4.png
-  - assets/bg6.png
-  - assets/bg7.png
   - assets/bg8.png
   - assets/bgp.png
-  - assets/ijo.png
-  - assets/biru.png
-  - assets/ungu.png
   - assets/logokids.jpeg
   - assets/logoideas.png
   - assets/icons/share.png
-  - assets/icons/recycle.png
   - assets/icons/mingcute.png
   - assets/icons/daun.png
   - assets/icons/dompet.png
   - assets/icons/lock.png
-  - assets/icons/lokasi.png
-  - assets/icons/love.png
   - assets/icons/panah.png
-  - assets/icons/panahb.png
   - assets/icons/plus.png
   - assets/icons/scan.png
   - assets/icons/topup.png
