@@ -1,6 +1,6 @@
 name: ecocash_sekolah
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 version: 0.1.0
 
 environment:
@@ -42,24 +42,27 @@ flutter:
   # mati - mis. bg1/bg6/bg7 (hanya dipakai tabungan/riwayat), ijo/biru/ungu
   # (kartu tabungan), dan icons/recycle.png.
   assets:
-  - assets/google.png
-  - assets/facebook.png
-  - assets/bg2.png
-  - assets/bg3.png
-  - assets/bg4.png
-  - assets/bg8.png
-  - assets/bgp.png
-  - assets/logokids.jpeg
-  - assets/logoideas.png
-  - assets/icons/share.png
-  - assets/icons/mingcute.png
-  - assets/icons/daun.png
-  - assets/icons/dompet.png
-  - assets/icons/lock.png
-  - assets/icons/panah.png
-  - assets/icons/plus.png
-  - assets/icons/scan.png
-  - assets/icons/topup.png
-  - assets/icons/star.png
-  - assets/icons/calendar.png
-  - assets/icons/riwayat.png
+    - assets/google.png
+    - assets/facebook.png
+    - assets/bg2.png
+    - assets/bg3.png
+    - assets/bg3-new.png
+    - assets/bg4.png
+    - assets/bg8.png
+    - assets/bgp.png
+    - assets/logokids.jpeg
+    - assets/logoideas.png
+    - assets/LogoEcocashKids.png
+    - assets/Logo-EcoCashKids-New (2).png
+    - assets/icons/share.png
+    - assets/icons/mingcute.png
+    - assets/icons/daun.png
+    - assets/icons/dompet.png
+    - assets/icons/lock.png
+    - assets/icons/panah.png
+    - assets/icons/plus.png
+    - assets/icons/scan.png
+    - assets/icons/topup.png
+    - assets/icons/star.png
+    - assets/icons/calendar.png
+    - assets/icons/riwayat.png

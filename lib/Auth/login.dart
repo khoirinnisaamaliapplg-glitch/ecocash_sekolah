@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:ecocash_sekolah/Auth/forgot_password.dart';
 import 'package:ecocash_sekolah/home.dart';
@@ -6,6 +7,7 @@ import 'package:ecocash_sekolah/ipconfig.dart';
 import 'package:ecocash_sekolah/app_footer.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:jwt_decoder/jwt_decoder.dart';
 
@@ -17,6 +19,21 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  // ============================================================
+  // PALET WARNA & KONSTANTA STYLING (CRIMSON THEME)
+  // ============================================================
+
+  static const Color _primaryCrimson = Color(0xFFA6192E);
+  static const Color _primaryCrimsonDark = Color(0xFF8C0D1E);
+  static const Color _primaryCrimsonLight = Color(0xFFBA1C30);
+  static const Color _textPrimary = Color(0xFF231F20);
+  static const Color _textSecondary = Color(0xFF3F3537);
+  static const Color _textMuted = Color(0xFF7A6F71);
+  static const Color _iconMuted = Color(0xFF8E777A);
+  static const Color _inputFill = Color(0xFFFCF7F7);
+  static const Color _inputBorder = Color(0xFFE6D5D7);
+  static const Color _errorBanner = Color(0xFFC93B3B);
+
   // ============================================================
   // CONTROLLER
   // ============================================================
@@ -501,13 +518,76 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
+    final bool isError = color == Colors.red;
+    final bool isWarning = color == Colors.orange;
+    final Color resolvedBgColor = isError
+        ? _errorBanner
+        : isWarning
+        ? const Color(0xFFD97706)
+        : const Color(0xFF16A34A);
+
+    final IconData statusIcon = isError
+        ? Icons.warning_amber_rounded
+        : isWarning
+        ? Icons.info_outline_rounded
+        : Icons.check_circle_outline_rounded;
+
+    final bool showOfflineBadge = message.toLowerCase().contains(
+      'tidak dapat terhubung',
+    );
+
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(message),
-          backgroundColor: color,
+          content: Row(
+            children: [
+              Icon(statusIcon, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (showOfflineBadge) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF991B1B),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'OFFLINE',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          backgroundColor: resolvedBgColor,
           behavior: SnackBarBehavior.floating,
+          elevation: 4,
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
         ),
       );
   }
@@ -521,6 +601,84 @@ class _LoginPageState extends State<LoginPage> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
+    );
+  }
+
+  // ============================================================
+  // INPUT DECORATION HELPER
+  // ============================================================
+
+  InputDecoration _buildInputDecoration({
+    required String hintText,
+    Widget? prefixIcon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: const TextStyle(
+        color: Color(0xFFA89B9D),
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+      ),
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: _inputFill,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(26),
+        borderSide: const BorderSide(color: _inputBorder, width: 1.2),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(26),
+        borderSide: const BorderSide(color: _inputBorder, width: 1.2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(26),
+        borderSide: const BorderSide(color: _primaryCrimson, width: 1.6),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(26),
+        borderSide: const BorderSide(color: _errorBanner, width: 1.2),
+      ),
+    );
+  }
+
+  // ============================================================
+  // HEADER BRANDING DENGAN GELOMBANG MERAH
+  // ============================================================
+
+  Widget _buildBrandHeader({
+    required double topInset,
+    required double headerHeight,
+    required double logoSize,
+  }) {
+    return ClipPath(
+      clipper: _HeaderWaveClipper(),
+      child: Container(
+        width: double.infinity,
+        height: headerHeight + topInset,
+        padding: EdgeInsets.only(top: topInset + 4, bottom: 30),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              _primaryCrimsonDark,
+              _primaryCrimson,
+              _primaryCrimsonLight,
+            ],
+          ),
+        ),
+        child: Center(
+          child: _InteractiveBrandLogo(
+            size: logoSize,
+            // Sesuaikan nama file PNG transparan Anda di folder assets/
+            assetPath: 'assets/Logo-EcoCashKids-New (2).png',
+          ),
+        ),
+      ),
     );
   }
 
@@ -540,11 +698,11 @@ class _LoginPageState extends State<LoginPage> {
       child: OutlinedButton(
         onPressed: () {},
         style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          side: const BorderSide(color: Color(0xFFD0D5DD)),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          backgroundColor: Colors.white,
+          foregroundColor: _textPrimary,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          side: const BorderSide(color: Color(0xFFE2D6D8), width: 1.2),
+          shape: const StadiumBorder(),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -556,25 +714,20 @@ class _LoginPageState extends State<LoginPage> {
                 height: 20,
                 width: 20,
                 errorBuilder: (context, error, stackTrace) {
-                  return const Icon(
-                    Icons.account_circle,
-                    size: 20,
-                  );
+                  return Icon(Icons.account_circle, size: 20, color: color);
                 },
               )
             else
-              Icon(
-                icon,
-                color: color,
-                size: 20,
-              ),
-            const SizedBox(width: 8),
+              Icon(icon, color: color, size: 20),
+            const SizedBox(width: 10),
             Flexible(
               child: Text(
                 label,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: Color(0xFF344054),
+                  color: _textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
@@ -593,46 +746,70 @@ class _LoginPageState extends State<LoginPage> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: Checkbox(
-                  value: _rememberMe,
-                  materialTapTargetSize:
-                      MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (value) {
-                    setState(() {
-                      _rememberMe = value ?? false;
-                    });
-                  },
-                ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              setState(() {
+                _rememberMe = !_rememberMe;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: Checkbox(
+                      value: _rememberMe,
+                      activeColor: _primaryCrimson,
+                      checkColor: Colors.white,
+                      side: const BorderSide(
+                        color: Color(0xFFD5C4C6),
+                        width: 1.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (value) {
+                        setState(() {
+                          _rememberMe = value ?? false;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Flexible(
+                    child: Text(
+                      'Ingat Saya',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: _textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Flexible(
-                child: Text(
-                  'Ingat Saya',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 14),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
         TextButton(
           onPressed: _openForgotPassword,
           style: TextButton.styleFrom(
-            padding: EdgeInsets.zero,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             minimumSize: Size.zero,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
           child: const Text(
             'Lupa Password?',
             style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF2E7D32),
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: _primaryCrimson,
             ),
           ),
         ),
@@ -651,13 +828,13 @@ class _LoginPageState extends State<LoginPage> {
           _socialButton(
             label: 'Facebook',
             imagePath: 'assets/facebook.png',
-            color: Colors.blue,
+            color: const Color(0xFF1877F2),
           ),
           const SizedBox(height: 12),
           _socialButton(
             label: 'Google',
             imagePath: 'assets/google.png',
-            color: Colors.red,
+            color: const Color(0xFFEA4335),
           ),
         ],
       );
@@ -669,15 +846,15 @@ class _LoginPageState extends State<LoginPage> {
           child: _socialButton(
             label: 'Facebook',
             imagePath: 'assets/facebook.png',
-            color: Colors.blue,
+            color: const Color(0xFF1877F2),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 14),
         Expanded(
           child: _socialButton(
             label: 'Google',
             imagePath: 'assets/google.png',
-            color: Colors.red,
+            color: const Color(0xFFEA4335),
           ),
         ),
       ],
@@ -692,10 +869,12 @@ class _LoginPageState extends State<LoginPage> {
     if (width < 220) {
       return const Center(
         child: Text(
-          'Atau Masuk Dengan',
+          'ATAU MASUK DENGAN',
           style: TextStyle(
-            color: Colors.grey,
-            fontSize: 11,
+            color: _textMuted,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.8,
           ),
         ),
       );
@@ -703,18 +882,20 @@ class _LoginPageState extends State<LoginPage> {
 
     return const Row(
       children: [
-        Expanded(child: Divider()),
+        Expanded(child: Divider(color: Color(0xFFECE2E3), thickness: 1)),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10),
+          padding: EdgeInsets.symmetric(horizontal: 12),
           child: Text(
-            'Atau Masuk Dengan',
+            'ATAU MASUK DENGAN',
             style: TextStyle(
-              color: Colors.grey,
-              fontSize: 12,
+              color: _textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
             ),
           ),
         ),
-        Expanded(child: Divider()),
+        Expanded(child: Divider(color: Color(0xFFECE2E3), thickness: 1)),
       ],
     );
   }
@@ -725,261 +906,275 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: LayoutBuilder(
+    final double topInset = MediaQuery.of(context).padding.top;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: LayoutBuilder(
           builder: (context, constraints) {
             final double screenWidth = constraints.maxWidth;
             final double screenHeight = constraints.maxHeight;
 
-            final bool compactLayout =
-                screenWidth < 360 || screenHeight < 700;
+            final bool compactLayout = screenWidth < 360 || screenHeight < 700;
 
             final double horizontalPadding = screenWidth < 220
-                ? 10
-                : screenWidth < 360
-                    ? 16
-                    : 24;
-
-            final double logoHeight =
-                screenWidth < 220 || screenHeight < 600
-                    ? 80
-                    : screenWidth < 360
-                        ? 100
-                        : 150;
-
-            final double topSpacing = screenHeight < 600
                 ? 12
                 : screenWidth < 360
-                    ? 24
-                    : 50;
+                ? 18
+                : 24;
 
-            final double titleSize =
-                screenWidth < 300 ? 22 : 24;
+            final double headerHeight = screenHeight < 650
+                ? 175
+                : compactLayout
+                ? 200
+                : 235;
 
-            return Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: horizontalPadding,
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(height: topSpacing),
+            final double logoSize = screenHeight < 650
+                ? 92
+                : compactLayout
+                ? 106
+                : 120;
 
-                      // =========================================
-                      // LOGO ECOCASH SEKOLAH
-                      // =========================================
-                      Center(
-                        child: Image.asset(
-                          'assets/logokids.jpeg',
-                          height: logoHeight,
-                          fit: BoxFit.contain,
-                          errorBuilder:
-                              (context, error, stackTrace) {
-                            return Icon(
-                              Icons.eco_rounded,
-                              size: logoHeight * 0.7,
-                              color: const Color(0xFF2E7D32),
-                            );
-                          },
-                        ),
+            final double titleSize = screenWidth < 300 ? 24 : 28;
+
+            return SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: screenHeight),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // =========================================
+                    // LOGO ECOCASH SEKOLAH (HERO MERAH)
+                    // =========================================
+                    _buildBrandHeader(
+                      topInset: topInset,
+                      headerHeight: headerHeight,
+                      logoSize: logoSize,
+                    ),
+
+                    // =========================================
+                    // FORM CONTAINER
+                    // =========================================
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: horizontalPadding,
                       ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(height: compactLayout ? 10 : 16),
 
-                      SizedBox(
-                        height: compactLayout ? 20 : 40,
-                      ),
-
-                      // =========================================
-                      // TITLE
-                      // =========================================
-                      Text(
-                        'Masuk',
-                        style: TextStyle(
-                          fontSize: titleSize,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF1D2939),
-                        ),
-                      ),
-
-                      SizedBox(
-                        height: compactLayout ? 16 : 24,
-                      ),
-
-                      // =========================================
-                      // EMAIL / USERNAME
-                      // =========================================
-                      const Text(
-                        'Email atau Username',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF344054),
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      TextField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.text,
-                        textInputAction: TextInputAction.next,
-                        decoration: InputDecoration(
-                          hintText: 'email atau username',
-                          prefixIcon: screenWidth < 220
-                              ? null
-                              : const Icon(
-                                  Icons.person_outline,
-                                ),
-                          isDense: true,
-                          contentPadding:
-                              const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 16,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(
-                        height: compactLayout ? 14 : 20,
-                      ),
-
-                      // =========================================
-                      // PASSWORD
-                      // =========================================
-                      const Text(
-                        'Password',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF344054),
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      TextField(
-                        controller: _passwordController,
-                        obscureText: _obscureText,
-                        textInputAction:
-                            TextInputAction.done,
-                        onSubmitted: (_) {
-                          if (!_isLoading) {
-                            _handleLogin();
-                          }
-                        },
-                        decoration: InputDecoration(
-                          hintText: '************',
-                          isDense: true,
-                          contentPadding:
-                              const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 16,
-                          ),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureText
-                                  ? Icons.visibility_outlined
-                                  : Icons
-                                      .visibility_off_outlined,
+                          // =========================================
+                          // TITLE
+                          // =========================================
+                          Text(
+                            'Masuk',
+                            style: TextStyle(
+                              fontSize: titleSize,
+                              fontWeight: FontWeight.w800,
+                              color: _textPrimary,
+                              letterSpacing: -0.3,
                             ),
-                            onPressed: () {
-                              setState(() {
-                                _obscureText =
-                                    !_obscureText;
-                              });
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Sign in to continue',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: _textMuted,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+
+                          SizedBox(height: compactLayout ? 18 : 24),
+
+                          // =========================================
+                          // EMAIL / USERNAME
+                          // =========================================
+                          const Text(
+                            'Email atau Username',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: _textSecondary,
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          TextField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.text,
+                            textInputAction: TextInputAction.next,
+                            style: const TextStyle(
+                              fontSize: 14.5,
+                              color: _textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            decoration: _buildInputDecoration(
+                              hintText: 'email atau username',
+                              prefixIcon: screenWidth < 220
+                                  ? null
+                                  : const Icon(
+                                      Icons.person_outline_rounded,
+                                      color: _iconMuted,
+                                      size: 21,
+                                    ),
+                            ),
+                          ),
+
+                          SizedBox(height: compactLayout ? 14 : 18),
+
+                          // =========================================
+                          // PASSWORD
+                          // =========================================
+                          const Text(
+                            'Password',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: _textSecondary,
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          TextField(
+                            controller: _passwordController,
+                            obscureText: _obscureText,
+                            textInputAction: TextInputAction.done,
+                            style: const TextStyle(
+                              fontSize: 14.5,
+                              color: _textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            onSubmitted: (_) {
+                              if (!_isLoading) {
+                                _handleLogin();
+                              }
                             },
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(
-                        height: compactLayout ? 6 : 10,
-                      ),
-
-                      _buildRememberForgot(screenWidth),
-
-                      SizedBox(
-                        height: compactLayout ? 14 : 22,
-                      ),
-
-                      // =========================================
-                      // LOGIN BUTTON
-                      // =========================================
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _isLoading
-                              ? null
-                              : _handleLogin,
-                          style:
-                              ElevatedButton.styleFrom(
-                            backgroundColor:
-                                const Color(0xFF2E7D32),
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(8),
+                            decoration: _buildInputDecoration(
+                              hintText: '••••••••••••',
+                              prefixIcon: screenWidth < 220
+                                  ? null
+                                  : const Icon(
+                                      Icons.lock_outline_rounded,
+                                      color: _iconMuted,
+                                      size: 21,
+                                    ),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureText
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                  color: _iconMuted,
+                                  size: 20,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _obscureText = !_obscureText;
+                                  });
+                                },
+                              ),
                             ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child:
-                                      CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text(
-                                  'Masuk',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight:
-                                        FontWeight.bold,
-                                  ),
+
+                          SizedBox(height: compactLayout ? 8 : 12),
+
+                          _buildRememberForgot(screenWidth),
+
+                          SizedBox(height: compactLayout ? 16 : 22),
+
+                          // =========================================
+                          // LOGIN BUTTON
+                          // =========================================
+                          Container(
+                            width: double.infinity,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(26),
+                              gradient: _isLoading
+                                  ? null
+                                  : const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        _primaryCrimsonLight,
+                                        _primaryCrimsonDark,
+                                      ],
+                                    ),
+                              boxShadow: _isLoading
+                                  ? null
+                                  : [
+                                      BoxShadow(
+                                        color: _primaryCrimsonDark.withValues(
+                                          alpha: 0.28,
+                                        ),
+                                        blurRadius: 14,
+                                        offset: const Offset(0, 6),
+                                      ),
+                                    ],
+                            ),
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _handleLogin,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                disabledBackgroundColor: _primaryCrimson
+                                    .withValues(alpha: 0.5),
+                                shadowColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(26),
                                 ),
-                        ),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Masuk',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15.5,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                            ),
+                          ),
+
+                          SizedBox(height: compactLayout ? 20 : 28),
+
+                          _buildDivider(screenWidth),
+
+                          SizedBox(height: compactLayout ? 16 : 22),
+
+                          _buildSocialLogin(screenWidth),
+
+                          // No self-registration here on purpose: school member
+                          // accounts are created by the school organization admin
+                          // through the admin panel, not from this app.
+                          SizedBox(height: compactLayout ? 22 : 32),
+
+                          // =========================================
+                          // FOOTER ECOCASH SEKOLAH
+                          // =========================================
+                          const AppFooter(),
+
+                          const SizedBox(height: 20),
+                        ],
                       ),
-
-                      SizedBox(
-                        height: compactLayout ? 20 : 30,
-                      ),
-
-                      _buildDivider(screenWidth),
-
-                      SizedBox(
-                        height: compactLayout ? 16 : 24,
-                      ),
-
-                      _buildSocialLogin(screenWidth),
-
-                      // No self-registration here on purpose: school member
-                      // accounts are created by the school organization admin
-                      // through the admin panel, not from this app.
-                      SizedBox(
-                        height: compactLayout ? 24 : 38,
-                      ),
-
-                      // =========================================
-                      // FOOTER ECOCASH SEKOLAH
-                      // =========================================
-                      const AppFooter(),
-
-                      const SizedBox(height: 24),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -988,4 +1183,159 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
+}
+
+// ============================================================
+// WIDGET LOGO MELINGKAR + AURA & SHADOW MERAH HALUS
+// ============================================================
+
+class _InteractiveBrandLogo extends StatefulWidget {
+  final double size;
+  final String assetPath;
+
+  const _InteractiveBrandLogo({required this.size, required this.assetPath});
+
+  @override
+  State<_InteractiveBrandLogo> createState() => _InteractiveBrandLogoState();
+}
+
+class _InteractiveBrandLogoState extends State<_InteractiveBrandLogo> {
+  bool _isHovered = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isActive = _isHovered || _isPressed;
+    final double targetScale = _isPressed
+        ? 0.95
+        : _isHovered
+        ? 1.05
+        : 1.0;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isPressed = _isHovered = false),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _isPressed = true),
+        onTapUp: (_) => setState(() => _isPressed = false),
+        onTapCancel: () => setState(() => _isPressed = false),
+        child: AnimatedScale(
+          scale: targetScale,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              // Pendaran merah gelap transparan tanpa garis lingkar putih
+              // agar logo menyatu alami dengan latar hero merah
+              color: const Color(
+                0xFF4E0510,
+              ).withValues(alpha: isActive ? 0.30 : 0.22),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(
+                    0xFF45030D,
+                  ).withValues(alpha: isActive ? 0.42 : 0.30),
+                  blurRadius: isActive ? 22 : 16,
+                  spreadRadius: isActive ? 2 : 0,
+                  offset: Offset(0, isActive ? 8 : 5),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: Padding(
+                padding: EdgeInsets.all(widget.size * 0.05),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Bayangan merah tipis mengikuti kontur asli logo
+                    Transform.translate(
+                      offset: Offset(0, isActive ? 4 : 2.5),
+                      child: ImageFiltered(
+                        imageFilter: ImageFilter.blur(
+                          sigmaX: isActive ? 5 : 3.5,
+                          sigmaY: isActive ? 5 : 3.5,
+                        ),
+                        child: ColorFiltered(
+                          colorFilter: ColorFilter.mode(
+                            const Color(
+                              0xFF3B020A,
+                            ).withValues(alpha: isActive ? 0.34 : 0.24),
+                            BlendMode.srcIn,
+                          ),
+                          child: Image.asset(
+                            widget.assetPath,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Gambar logo utama (fallback ke logokids.jpeg jika perlu)
+                    Image.asset(
+                      widget.assetPath,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Image.asset(
+                          'assets/logokids.jpeg',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.eco_rounded,
+                            size: widget.size * 0.5,
+                            color: Colors.white,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// CUSTOM CLIPPER UNTUK GELOMBANG HEADER MERAH
+// ============================================================
+
+class _HeaderWaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final Path path = Path();
+    path.lineTo(0, size.height - 26);
+
+    // Lengkungan gelombang pertama (turun halus di kiri-tengah)
+    path.quadraticBezierTo(
+      size.width * 0.28,
+      size.height,
+      size.width * 0.55,
+      size.height - 14,
+    );
+
+    // Lengkungan gelombang kedua (naik halus ke kanan)
+    path.quadraticBezierTo(
+      size.width * 0.80,
+      size.height - 28,
+      size.width,
+      size.height - 12,
+    );
+
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

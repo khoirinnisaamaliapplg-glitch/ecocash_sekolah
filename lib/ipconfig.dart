@@ -17,12 +17,12 @@ class ApiConfig {
 
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:3000/api/v1',
+    defaultValue: 'https://api.ecocash.id/api/v1',
   );
 
   static const String socketUrl = String.fromEnvironment(
     'API_SOCKET_URL',
-    defaultValue: 'http://localhost:3000/sessions',
+    defaultValue: 'https://api.ecocash.id/sessions',
   );
 
   /// Halaman akun berbasis web (reset kata sandi & verifikasi email).
