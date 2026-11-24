@@ -144,7 +144,7 @@ class _OrganisasiPageState extends State<OrganisasiPage> {
       child: Text(
         _initials(name),
         style: TextStyle(
-          color: const Color(0xFF3478F6),
+          color: const Color(0xFFD32F2F),
           fontSize: size <= 40 ? 13 : 26,
           fontWeight: FontWeight.w700,
         ),
@@ -287,7 +287,11 @@ class _OrganisasiPageState extends State<OrganisasiPage> {
           'Hubungi admin sekolah untuk pertanyaan seputar setoran, saldo, atau '
           'kegiatan sekolah.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 11.5, height: 1.4),
+          style: TextStyle(
+            color: Color(0xFF9E9E9E),
+            fontSize: 11.5,
+            height: 1.4,
+          ),
         ),
       ],
     );
@@ -387,7 +391,8 @@ class _OrganisasiPageState extends State<OrganisasiPage> {
             const SizedBox(height: 14),
           ],
 
-          if (code.isNotEmpty) _buildInfoRow(Icons.badge_outlined, 'Kode', code),
+          if (code.isNotEmpty)
+            _buildInfoRow(Icons.badge_outlined, 'Kode', code),
           if (address.isNotEmpty)
             _buildInfoRow(Icons.location_on_outlined, 'Alamat', address),
         ],
@@ -412,7 +417,11 @@ class _OrganisasiPageState extends State<OrganisasiPage> {
         ),
         child: const Row(
           children: [
-            Icon(Icons.info_outline_rounded, size: 20, color: Color(0xFF8A8A8A)),
+            Icon(
+              Icons.info_outline_rounded,
+              size: 20,
+              color: Color(0xFF8A8A8A),
+            ),
             SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -510,8 +519,10 @@ class _OrganisasiPageState extends State<OrganisasiPage> {
                     icon: const Icon(Icons.call_outlined, size: 17),
                     label: const Text('Telepon'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF2E7D32),
-                      side: const BorderSide(color: Color(0xFFCFE3D5)),
+                      foregroundColor: const Color(0xFFD32F2F),
+                      side: const BorderSide(
+                        color: Color.fromARGB(255, 194, 82, 82),
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
