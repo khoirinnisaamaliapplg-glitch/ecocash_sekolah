@@ -665,7 +665,7 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
                       padding: const EdgeInsets.all(8),
 
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: Color(0xFFD32F2F).withOpacity(0.1),
 
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -673,7 +673,7 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
                       child: const Icon(
                         Icons.account_balance_wallet,
 
-                        color: Colors.blue,
+                        color: Color(0xFFD32F2F),
 
                         size: 28,
                       ),
@@ -776,7 +776,10 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(15),
 
-                borderSide: const BorderSide(color: Colors.blue, width: 1.5),
+                borderSide: const BorderSide(
+                  color: Color(0xFFD32F2F),
+                  width: 1.5,
+                ),
               ),
             ),
 
@@ -922,7 +925,7 @@ class _IsiSaldoPageState extends State<IsiSaldoPage>
             onPressed: enabled ? _createTopUp : null,
 
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
+              backgroundColor: Color(0xFFD32F2F),
 
               disabledBackgroundColor: const Color(0xFFD3D3D3),
 

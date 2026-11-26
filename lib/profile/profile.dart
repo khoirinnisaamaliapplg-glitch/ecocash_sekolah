@@ -428,10 +428,8 @@ class _ProfilePageState extends State<ProfilePage> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => OrganisasiPage(
-          organization: _organization,
-          admin: _schoolAdmin,
-        ),
+        builder: (_) =>
+            OrganisasiPage(organization: _organization, admin: _schoolAdmin),
       ),
     );
 
@@ -504,7 +502,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF3478F6),
+                        color: const Color(0xFFD32F2F),
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
                       ),
@@ -549,9 +547,7 @@ class _ProfilePageState extends State<ProfilePage> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: verified
-                ? const Color(0xFFE8F5E9)
-                : const Color(0xFFFFF3E0),
+            color: verified ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
@@ -647,7 +643,7 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Text(
         _initials(name),
         style: TextStyle(
-          color: const Color(0xFF3478F6),
+          color: const Color(0xFFD32F2F),
           // Avatar admin sekolah jauh lebih kecil dari avatar profil.
           fontSize: size <= 40 ? 12 : 30,
           fontWeight: FontWeight.w700,
@@ -678,16 +674,13 @@ class _ProfilePageState extends State<ProfilePage> {
             ListTile(
               leading: const Icon(
                 Icons.photo_library_outlined,
-                color: Color(0xFF3478F6),
+                color: Color(0xFFD32F2F),
               ),
               title: const Text('Ganti foto'),
               onTap: () => Navigator.pop(sheetContext, 'change'),
             ),
             ListTile(
-              leading: const Icon(
-                Icons.delete_outline_rounded,
-                color: _accent,
-              ),
+              leading: const Icon(Icons.delete_outline_rounded, color: _accent),
               title: const Text('Hapus foto'),
               onTap: () => Navigator.pop(sheetContext, 'remove'),
             ),
@@ -822,7 +815,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     color: const Color(0xFFEAF2FF),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(icon, color: const Color(0xFF3478F6), size: 22),
+                  child: Icon(icon, color: const Color(0xFFD32F2F), size: 22),
                 ),
 
                 const SizedBox(width: 14),

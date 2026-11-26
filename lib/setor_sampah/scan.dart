@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:ecocash_sekolah/core/api_client.dart';
 import 'package:ecocash_sekolah/core/session_socket.dart';
@@ -15,6 +16,18 @@ class ScanPage extends StatefulWidget {
 }
 
 class _ScanPageState extends State<ScanPage> {
+  // ============================================================
+  // PALET WARNA & KONSTANTA STYLING (DESIGN TOKENS)
+  // ============================================================
+  static const Color _primaryRed = Color(0xFFD32F2F);
+  static const Color _primaryRedDark = Color(0xFFB71C1C);
+  static const Color _softRedBg = Color(0xFFFEF2F2);
+  static const Color _softRedBorder = Color(0xFFFECACA);
+  static const Color _softRedIconBg = Color(0xFFFEE2E2);
+  static const Color _textPrimary = Color(0xFF1E293B);
+  static const Color _textSecondary = Color(0xFF475569);
+  static const Color _textMuted = Color(0xFF64748B);
+
   String? _qrIdentifier;
   bool _isLoading = true;
   bool _isRegenerating = false;
@@ -221,7 +234,9 @@ class _ScanPageState extends State<ScanPage> {
     _isCheckingSession = true;
 
     if (!isManualCheck) {
-      setState(() { _secondsWaiting += 2; });
+      setState(() {
+        _secondsWaiting += 2;
+      });
     }
 
     try {
@@ -247,7 +262,9 @@ class _ScanPageState extends State<ScanPage> {
       if (isManualCheck && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Mesin belum memindai QR. Arahkan layar ke kamera scanner mesin.'),
+            content: Text(
+              'Mesin belum memindai QR. Arahkan layar ke kamera scanner mesin.',
+            ),
           ),
         );
       }
@@ -279,151 +296,317 @@ class _ScanPageState extends State<ScanPage> {
   Widget build(BuildContext context) {
     final bool isTimeout = _secondsWaiting >= _maxWaitSeconds && !_hasNavigated;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Column(
-                children: [
-                  _buildHeader(context, isTimeout),
-                  const SizedBox(height: 16),
-                  const AppFooter(),
-                  const SizedBox(height: 20),
-                ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: _buildHeader(context, isTimeout, constraints.maxHeight),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context, bool isTimeout) {
+  Widget _buildHeader(
+    BuildContext context,
+    bool isTimeout,
+    double minViewportHeight,
+  ) {
+    final double topInset = MediaQuery.of(context).padding.top;
+    final double screenWidth = MediaQuery.sizeOf(context).width;
+    final double heroHeight = 305 + topInset;
+    final double sheetTopOffset = 252 + topInset;
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
+        // ============================================================
+        // HERO BACKGROUND MERAH + MASKOT HARIMAU DI SISI KANAN
+        // ============================================================
         Container(
-          height: 280,
+          height: heroHeight,
           width: double.infinity,
           decoration: const BoxDecoration(
-            image: DecorationImage(
-              image: AssetImage('assets/bg3.png'),
-              fit: BoxFit.cover,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF8C0F15), Color(0xFF99141A), Color(0xFFA61921)],
             ),
           ),
-          padding: const EdgeInsets.only(top: 60, left: 20, right: 20),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              GestureDetector(
-                onTap: () {
-                  _pollingTimer?.cancel();
-                  Navigator.pop(context);
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.3),
-                    shape: BoxShape.circle,
+              // Ilustrasi Maskot Harimau di Kanan (digeser ke bawah agar kepala utuh)
+              Positioned(
+                right: 0,
+                bottom: 8,
+                child: ClipRect(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    // Hanya memotong area putih tipis di tepi atas bg3-new.png
+                    // tanpa menyentuh margin merah di atas telinga maskot
+                    heightFactor: 0.915,
+                    child: Image.asset(
+                      'assets/bg3-new.png',
+                      width: (screenWidth * 0.52).clamp(185.0, 230.0),
+                      fit: BoxFit.contain,
+                      alignment: Alignment.bottomRight,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Image.asset(
+                          'assets/bg3.png',
+                          width: (screenWidth * 0.52).clamp(185.0, 230.0),
+                          fit: BoxFit.contain,
+                          alignment: Alignment.bottomRight,
+                        );
+                      },
+                    ),
                   ),
-                  child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
                 ),
               ),
-              const SizedBox(width: 15),
-              const Text(
-                'Setor Sampah',
-                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+
+              // Konten Teks & Navigasi Kiri (Top Bar tetap utuh)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: topInset + 14,
+                  left: 20,
+                  right: 20,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Baris Navigasi Atas
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            _pollingTimer?.cancel();
+                            Navigator.pop(context);
+                          },
+                          child: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.22),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.25),
+                                width: 1,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        const Text(
+                          'Setor Sampah',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // Kartu Instruksi Transparan di Sisi Kiri (tidak menutupi wajah maskot)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: screenWidth * 0.53),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFF5A080C,
+                          ).withValues(alpha: 0.42),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.16),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Text(
+                          'Arahkan kode QR ini ke kamera mesin EcoCash.\nMesin akan otomatis mengenali akun Anda.',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
 
+        // ============================================================
+        // BOTTOM SHEET KONTEN QR & AKSI
+        // ============================================================
         Container(
-          margin: const EdgeInsets.only(top: 130, left: 20, right: 20, bottom: 20),
-          padding: const EdgeInsets.all(20),
+          width: double.infinity,
+          margin: EdgeInsets.only(top: sheetTopOffset),
+          constraints: BoxConstraints(
+            minHeight: (minViewportHeight - sheetTopOffset).clamp(
+              0.0,
+              double.infinity,
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(25),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5)),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
             ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Indikator Drag Handle Pill
+              Container(
+                width: 42,
+                height: 4.5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
               const Text(
                 'Tunjukkan Kode QR',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  color: _textPrimary,
+                  letterSpacing: -0.2,
+                ),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'Arahkan kode QR ini ke kamera mesin EcoCash.\nMesin akan otomatis mengenali akun Anda.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.4),
-              ),
-              const SizedBox(height: 25),
+
+              const SizedBox(height: 20),
 
               // Wadah Gambar QR
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 220,
-                    height: 220,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.grey.shade300, width: 2),
+              Container(
+                width: 224,
+                height: 224,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                      blurRadius: 24,
+                      spreadRadius: 1,
+                      offset: const Offset(0, 8),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: _buildQrContent(),
+                  ],
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const CustomBarcodeFrame(size: 196),
+                    Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: _buildQrContent(),
+                      ),
                     ),
-                  ),
-                  const CustomBarcodeFrame(size: 230),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
+
+              const SizedBox(height: 20),
 
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.verified_user_outlined, size: 17, color: Colors.green.shade700),
+                  const Icon(
+                    Icons.verified_user_outlined,
+                    size: 18,
+                    color: _primaryRed,
+                  ),
                   const SizedBox(width: 6),
-                  Text(
+                  const Text(
                     'QR Identitas EcoCash Sekolah',
-                    style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.bold, fontSize: 12),
+                    style: TextStyle(
+                      color: _primaryRed,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text(
+              const SizedBox(height: 5),
+              const Text(
                 'Kode QR ini merupakan identitas akun EcoCash Sekolah.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                style: TextStyle(color: _textMuted, fontSize: 12, height: 1.35),
               ),
+
               const SizedBox(height: 20),
 
               // Banner panduan / Bantuan jika timeout
               if (isTimeout)
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(13),
                   decoration: BoxDecoration(
                     color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Colors.orange.shade200),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline, color: Colors.orange, size: 22),
-                      const SizedBox(width: 10),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.info_outline,
+                          color: Colors.orange,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           'Belum terdeteksi oleh mesin? Pastikan layar terang dan posisikan QR tepat di depan scanner, atau tanyakan ke petugas.',
-                          style: TextStyle(fontSize: 11, color: Colors.orange.shade900, height: 1.3),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.orange.shade900,
+                            height: 1.35,
+                          ),
                         ),
                       ),
                     ],
@@ -436,76 +619,135 @@ class _ScanPageState extends State<ScanPage> {
                */
               else
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(13),
                   decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.shade200),
+                    color: _softRedBg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _softRedBorder),
                   ),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.qr_code_2_rounded,
-                        color: Colors.green,
-                        size: 22,
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: _softRedIconBg,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.qr_code_2_rounded,
+                          color: _primaryRed,
+                          size: 20,
+                        ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
+                      const SizedBox(width: 12),
+                      const Expanded(
                         child: Text(
                           'Tunjukkan QR ini ke kamera mesin. Layar akan '
                           'memperbarui otomatis setelah mesin memindainya.',
                           style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.green.shade900,
-                            height: 1.3,
+                            fontSize: 11.5,
+                            color: _textSecondary,
+                            height: 1.35,
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
+
               const SizedBox(height: 20),
 
               // Tombol Regenerate QR
               SizedBox(
                 width: double.infinity,
+                height: 50,
                 child: OutlinedButton.icon(
-                  onPressed: (_isLoading || _isRegenerating) ? null : _regenerateQrCredential,
+                  onPressed: (_isLoading || _isRegenerating)
+                      ? null
+                      : _regenerateQrCredential,
                   icon: _isRegenerating
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.refresh, color: Colors.green),
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: _primaryRed,
+                          ),
+                        )
+                      : const Icon(Icons.refresh, color: _primaryRed, size: 20),
                   label: Text(
-                    _isRegenerating ? 'Memperbarui...' : 'Perbarui / Buat QR Baru',
-                    style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                    _isRegenerating
+                        ? 'Memperbarui...'
+                        : 'Perbarui / Buat QR Baru',
+                    style: const TextStyle(
+                      color: _primaryRed,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.green),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: _primaryRed, width: 1.3),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
+
+              const SizedBox(height: 12),
 
               // Tombol Cek Manual
-              SizedBox(
+              Container(
                 width: double.infinity,
+                height: 50,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: (_isLoading || _qrIdentifier == null)
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: _primaryRed.withValues(alpha: 0.25),
+                            blurRadius: 12,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                ),
                 child: ElevatedButton.icon(
                   onPressed: (_isLoading || _qrIdentifier == null)
                       ? null
                       : () => _checkForOpenSession(isManualCheck: true),
-                  icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+                  icon: const Icon(
+                    Icons.qr_code_scanner,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                   label: const Text(
                     'Cek Status Sambungan Mesin',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: (_isLoading || _qrIdentifier == null) ? Colors.grey : const Color(0xFF388E3C),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    backgroundColor: (_isLoading || _qrIdentifier == null)
+                        ? Colors.grey.shade400
+                        : _primaryRed,
+                    disabledBackgroundColor: Colors.grey.shade400,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
               ),
+
+              const SizedBox(height: 22),
+
+              // Footer di dalam lembar putih
+              const AppFooter(),
             ],
           ),
         ),
@@ -515,7 +757,7 @@ class _ScanPageState extends State<ScanPage> {
 
   Widget _buildQrContent() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: Colors.green));
+      return const Center(child: CircularProgressIndicator(color: _primaryRed));
     }
 
     if (_qrIdentifier != null && _qrIdentifier!.trim().isNotEmpty) {
@@ -523,28 +765,37 @@ class _ScanPageState extends State<ScanPage> {
         child: QrImageView(
           data: _qrIdentifier!,
           version: QrVersions.auto,
-          size: 180,
+          size: 174,
           backgroundColor: Colors.white,
+          eyeStyle: const QrEyeStyle(
+            eyeShape: QrEyeShape.square,
+            color: _textPrimary,
+          ),
+          dataModuleStyle: const QrDataModuleStyle(
+            dataModuleShape: QrDataModuleShape.square,
+            color: _textPrimary,
+          ),
         ),
       );
     }
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, color: Colors.red.shade400, size: 36),
+            Icon(Icons.error_outline, color: Colors.red.shade400, size: 34),
             const SizedBox(height: 8),
             Text(
               _errorMessage ?? 'Gagal memuat QR EcoCash.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 11.5),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             TextButton(
               onPressed: _fetchQrCredential,
+              style: TextButton.styleFrom(foregroundColor: _primaryRed),
               child: const Text('Coba Lagi'),
             ),
           ],
@@ -572,21 +823,56 @@ class BarcodeFramePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final Paint paint = Paint()
-      ..color = const Color(0xFF4CAF50)
-      ..strokeWidth = 5
+      ..color = const Color(0xFFD32F2F)
+      ..strokeWidth = 4.5
       ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
 
-    const double corner = 36;
+    const double corner = 28;
+    const double radius = 10;
 
     // Kiri Atas
-    canvas.drawPath(Path()..moveTo(0, corner)..lineTo(0, 0)..lineTo(corner, 0), paint);
+    canvas.drawPath(
+      Path()
+        ..moveTo(0, corner)
+        ..lineTo(0, radius)
+        ..quadraticBezierTo(0, 0, radius, 0)
+        ..lineTo(corner, 0),
+      paint,
+    );
     // Kanan Atas
-    canvas.drawPath(Path()..moveTo(size.width - corner, 0)..lineTo(size.width, 0)..lineTo(size.width, corner), paint);
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width - corner, 0)
+        ..lineTo(size.width - radius, 0)
+        ..quadraticBezierTo(size.width, 0, size.width, radius)
+        ..lineTo(size.width, corner),
+      paint,
+    );
     // Kiri Bawah
-    canvas.drawPath(Path()..moveTo(0, size.height - corner)..lineTo(0, size.height)..lineTo(corner, size.height), paint);
+    canvas.drawPath(
+      Path()
+        ..moveTo(0, size.height - corner)
+        ..lineTo(0, size.height - radius)
+        ..quadraticBezierTo(0, size.height, radius, size.height)
+        ..lineTo(corner, size.height),
+      paint,
+    );
     // Kanan Bawah
-    canvas.drawPath(Path()..moveTo(size.width - corner, size.height)..lineTo(size.width, size.height)..lineTo(size.width, size.height - corner), paint);
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width - corner, size.height)
+        ..lineTo(size.width - radius, size.height)
+        ..quadraticBezierTo(
+          size.width,
+          size.height,
+          size.width,
+          size.height - radius,
+        )
+        ..lineTo(size.width, size.height - corner),
+      paint,
+    );
   }
 
   @override
